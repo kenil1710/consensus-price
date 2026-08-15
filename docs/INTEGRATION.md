@@ -220,9 +220,12 @@ racing is not an expensive mistake.
 ## 8. Reference implementation
 
 `contracts/PriceConsumer.py` is a complete, deployed, working consumer — copy from it
-directly. It is live on Studionet at
-[`0x4dfBA3605eA958Cea3b5c67ED8Ff6BaAE75aD29A`](https://genlayer-explorer.vercel.app/address/0x4dfBA3605eA958Cea3b5c67ED8Ff6BaAE75aD29A),
-reading the oracle at `0x6dc688b2F104FB124B2a3bd17F7374b68dF06C53`.
+directly. It is live on both networks:
+
+| Network | PriceConsumer | reading oracle |
+|---|---|---|
+| Bradbury | `0x68c97558e71A8E574d7E52018115312A696146FC` | `0xF6d254596B58B8c3898e33FA871ee17f68e94fB2` |
+| Studionet | `0x4dfBA3605eA958Cea3b5c67ED8Ff6BaAE75aD29A` | `0x6dc688b2F104FB124B2a3bd17F7374b68dF06C53` |
 
 It demonstrates both integration styles side by side:
 

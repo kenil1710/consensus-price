@@ -31,6 +31,10 @@ each other.
 
 Full transaction hashes in [`deployments.json`](deployments.json).
 
+**Reviewers: [start here](#testing-this-contract).** There is no frontend — this is an
+Intelligent Contracts submission, and the contract itself is the deliverable. Every method
+below can be called in the browser with no wallet and no install.
+
 Real result from a live request, not a mock:
 
 ```
@@ -80,6 +84,192 @@ rendered page, and the grounding check discarded it rather than trusting it — 
 prompt-injection defense rejecting a bad extraction in production, not in a test.
 
 Neither failure moved the price. That is the entire point of the median.
+
+---
+
+## Testing this contract
+
+Two ways in. **Option A needs nothing installed and no wallet** — start there.
+
+| | Option A — GenLayer Studio | Option B — CLI |
+|---|---|---|
+| Network | Studionet | Bradbury |
+| Install | none, runs in the browser | Node + `genlayer` CLI |
+| Wallet | none, Studio provides funded accounts | keystore with testnet GEN |
+| Reads | ✅ | ✅ |
+| Writes (`request_price`) | ✅ | ✅ |
+
+### Option A — GenLayer Studio (no install, no wallet)
+
+**One-click import:**
+
+```
+https://studio.genlayer.com/?import-contract=0x6dc688b2F104FB124B2a3bd17F7374b68dF06C53
+```
+
+This loads the deployed Studionet instance: Studio fetches the on-chain source into the
+editor and registers the live contract so every method is callable from the right-hand
+panel. Pick a method, fill the arguments, and read the result.
+
+> **Note on the address.** This link uses the **Studionet** address. Studio runs its own
+> network (chain 61999) and cannot reach Bradbury (chain 4221), so importing the Bradbury
+> address fails with "Contract not found". Both networks run identical code — see the
+> cross-network comparison above. To exercise the Bradbury deployment, use Option B.
+
+### Option B — CLI (Bradbury)
+
+```bash
+npm install -g genlayer
+genlayer network set testnet-bradbury
+```
+
+Reads need no account. `request_price` needs an account with a little testnet GEN to cover
+the consensus fee deposit.
+
+### The Bradbury explorer
+
+```
+https://explorer-bradbury.genlayer.com/address/0xF6d254596B58B8c3898e33FA871ee17f68e94fB2
+```
+
+Useful for **verifying** the deployment — it shows the on-chain source, the balance, and
+every transaction against the contract, including the price requests below. It is a
+read-only browser: it has **no** interface for calling contract methods. Use Studio or the
+CLI to actually call anything.
+
+---
+
+The five steps below are written as CLI commands against Bradbury. **In Studio, run the
+same steps** by selecting the identical method name and arguments in the interaction panel —
+the contract is the same and the fee is zeroed on both deployments. Substitute the Studionet
+addresses (`0x6dc688b2…` oracle, `0x4dfBA360…` consumer) if you are reading along there.
+
+### Step 1 — Current state (no wallet)
+
+```bash
+genlayer call 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 get_stats
+genlayer call 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 get_config
+genlayer call 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 decimals
+```
+
+`get_stats` shows total requests and unique pairs. `get_config` shows every tunable plus
+`enabled_core: 7` — the live source count. `decimals` returns `18`.
+
+Also worth calling, because it is the transparency claim made checkable:
+
+```bash
+genlayer call 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 get_sources
+genlayer call 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 get_governance_log --args 20
+```
+
+`get_sources` reports per-source `ok_count`, `fail_count`, `reliability_pct`, and the real
+`last_fail` string. `get_governance_log` lists every owner action ever taken, with address
+and timestamp.
+
+### Step 2 — Existing price data (no wallet)
+
+```bash
+genlayer call 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 get_latest_price --args "ETH/USD"
+genlayer call 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 get_price_history --args "ETH/USD" 5
+genlayer call 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 get_twap --args "ETH/USD" 5
+```
+
+Returns real prices from live requests, with the full per-source breakdown in `sources` and
+the failure reason for any source that did not answer. `get_price_history` returns however
+many records exist, newest first — it does not pad to the count you ask for.
+
+Divide `price` by 10^18 for USD: `1877599524608443050000` is `$1,877.599524608443050`.
+
+### Step 3 — Request a fresh price (needs an account)
+
+```bash
+genlayer write 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 request_price --args "ETH/USD"
+```
+
+**The fee is set to 0 on this deployment, so send no value.** The contract charges
+`fee_wei` (default 0.001 GEN), but the CLI has no way to attach `msg.value` to a call —
+`--fee-value` is the consensus fee deposit, not the value forwarded to the contract — so
+the fee is zeroed here to keep the method reachable. The fee logic itself is covered by the
+direct test suite. You still need a little GEN for the deposit.
+
+This takes **30–60 seconds**: the leader fetches seven sources, then every validator
+independently re-fetches and re-derives the median before agreeing. Watch for
+`resultName: 'AGREE'`. Then:
+
+```bash
+genlayer call 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 get_latest_price --args "ETH/USD"
+```
+
+`timestamp` and `price_id` will have advanced, and `flags` will no longer read `FIRST`.
+
+> **If it reverts with `[EXPECTED] fresh, retry in Ns`** — that is the 60-second per-pair
+> rate limit working, not a failure. It rejects duplicate requests *before* any network
+> fetch so the caller keeps their money. Wait it out, or request a different pair.
+
+### Step 4 — A different pair, zero configuration
+
+```bash
+genlayer write 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 request_price --args "BTC/USD"
+genlayer call  0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 get_latest_price --args "BTC/USD"
+```
+
+No setup was needed for BTC/USD, and none is needed for `SOL/USD`, `AVAX/USD`, or
+`LINK/USD` either — exchange source symbols are derived mechanically from the pair string.
+Try an invalid pair like `"NOTREAL/USD"` to watch it fail cleanly with `[TRANSIENT]` rather
+than storing garbage.
+
+### Step 5 — Composability
+
+`PriceConsumer` is a separate contract that holds no price data of its own. Every number it
+returns comes from a free cross-contract read of the oracle.
+
+```bash
+genlayer call 0x68c97558e71A8E574d7E52018115312A696146FC quote --args "ETH/USD" 2500000000000000000
+```
+
+Returns the USD value of 2.5 ETH — `value_usd_atto: '4693998811521107625000'`, about
+`$4,693.99` — alongside the price, confidence, and age it used.
+
+The more interesting call is the one that **refuses**:
+
+```bash
+genlayer call 0x68c97558e71A8E574d7E52018115312A696146FC quote --args "DOGE/USD" 1000000000000000000
+# execution failed — no price stored for DOGE/USD
+
+genlayer call 0x68c97558e71A8E574d7E52018115312A696146FC is_safe_to_trade --args "DOGE/USD"
+# { safe: false, reason: 'no price for DOGE/USD' }
+```
+
+`quote` uses `get_price_checked`, which reverts on a missing, stale, or low-confidence
+price rather than returning one. `is_safe_to_trade` uses `get_latest_price` and reports the
+reason instead. Neither invents a number. That contrast is the integration pattern the
+project is arguing for — see [INTEGRATION.md](docs/INTEGRATION.md).
+
+### Verifying the deployed code is this repo
+
+Both deployments serve their source on-chain. This confirms the running contract is exactly
+the file in this repository, byte for byte:
+
+```bash
+curl -s -X POST https://rpc-bradbury.genlayer.com -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"gen_getContractCode",
+       "params":[{"address":"0xF6d254596B58B8c3898e33FA871ee17f68e94fB2"}],"id":1}' \
+  | python3 -c "import json,sys,base64,hashlib; \
+      print(hashlib.sha256(base64.b64decode(json.load(sys.stdin)['result'])).hexdigest())"
+
+shasum -a 256 contracts/ConsensusPrice.py
+```
+
+Both print `757faa5d7d61a805…`. The Studionet instance hashes identically — the two networks
+run the same 36,688 bytes.
+
+### Running the tests locally
+
+```bash
+pip install genlayer-test[sim]
+genvm-lint check contracts/ConsensusPrice.py
+pytest test/direct -q          # 132 passed
+```
 
 ---
 
@@ -228,11 +418,7 @@ deployments.json              live addresses and transaction hashes
 
 ## Tests
 
-```bash
-pip install genlayer-test[sim]
-genvm-lint check contracts/ConsensusPrice.py
-pytest test/direct -q
-```
+Commands under [Running the tests locally](#running-the-tests-locally).
 
 132 direct-mode tests covering price parsing across all six response shapes, median and
 basis-point math, confidence boundaries, TWAP, symbol substitution, the ring buffer,
