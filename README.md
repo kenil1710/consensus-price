@@ -123,8 +123,8 @@ npm install -g genlayer
 genlayer network set testnet-bradbury
 ```
 
-Reads need no account. `request_price` needs an account with a little testnet GEN to cover
-the consensus fee deposit.
+Reads need no account. `request_price` needs an account with a little testnet GEN and an
+explicit `--fee-value` deposit — see [Step 3](#step-3--request-a-fresh-price-needs-an-account).
 
 ### The Bradbury explorer
 
@@ -178,22 +178,48 @@ Returns real prices from live requests, with the full per-source breakdown in `s
 the failure reason for any source that did not answer. `get_price_history` returns however
 many records exist, newest first — it does not pad to the count you ask for.
 
+At the time of writing the Bradbury oracle holds three ETH/USD records, all HIGH confidence:
+
+```
+ETH/USD:3   1878505000000000000000    ts 1786794348
+ETH/USD:2   1879285000000000000000    ts 1786791368
+ETH/USD:1   1877599524608443050000    ts 1786789721
+
+get_twap("ETH/USD", 5) -> twap 1878668638190945924837, samples 3, window 5091s
+```
+
+Note the TWAP is not the mean of the three: each record is weighted by how long it stood as
+the latest price, which is what makes it resistant to a brief spike.
+
 Divide `price` by 10^18 for USD: `1877599524608443050000` is `$1,877.599524608443050`.
 
 ### Step 3 — Request a fresh price (needs an account)
 
 ```bash
-genlayer write 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 request_price --args "ETH/USD"
+genlayer write 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 request_price \
+  --args "ETH/USD" --fee-value 100000000000000000
 ```
 
-**The fee is set to 0 on this deployment, so send no value.** The contract charges
-`fee_wei` (default 0.001 GEN), but the CLI has no way to attach `msg.value` to a call —
-`--fee-value` is the consensus fee deposit, not the value forwarded to the contract — so
-the fee is zeroed here to keep the method reachable. The fee logic itself is covered by the
-direct test suite. You still need a little GEN for the deposit.
+> **`--fee-value` is required here — do not omit it.** Without it the CLI attaches a zero
+> deposit and the transaction is reverted by the consensus contract within ~3 seconds,
+> before it ever reaches consensus:
+>
+> ```
+> Error: Transaction reverted: EVM tx 0x7065dc… to consensus contract 0x0112Bf6e… was reverted.
+> ```
+>
+> `request_price` runs seven web fetches plus a model call across the leader and every
+> validator, so the deposit the CLI derives automatically does not cover it. `0.1 GEN`
+> (`100000000000000000` wei) is comfortably sufficient; unused deposit is not consumed.
 
-This takes **30–60 seconds**: the leader fetches seven sources, then every validator
-independently re-fetches and re-derives the median before agreeing. Watch for
+**Note this is the consensus fee deposit, not the contract's own fee.** The contract's
+`fee_wei` is set to **0** on this deployment, so no `msg.value` is needed — which is
+necessary, because the CLI has no way to attach `msg.value` to a call at all. The contract's
+fee logic is covered by the direct test suite instead.
+
+This takes **1–7 minutes**: the leader fetches seven sources, then every validator
+independently re-fetches and re-derives the median before agreeing. Observed runs on
+Bradbury ranged from 56 seconds to 409 seconds depending on network load. Watch for
 `resultName: 'AGREE'`. Then:
 
 ```bash
@@ -209,7 +235,8 @@ genlayer call 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 get_latest_price --args
 ### Step 4 — A different pair, zero configuration
 
 ```bash
-genlayer write 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 request_price --args "BTC/USD"
+genlayer write 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 request_price \
+  --args "BTC/USD" --fee-value 100000000000000000
 genlayer call  0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 get_latest_price --args "BTC/USD"
 ```
 
@@ -354,12 +381,15 @@ is no majority) and still needs validators to agree.
 ### Request a price (transaction)
 
 ```bash
-genlayer write <ORACLE> request_price --args "ETH/USD"
+genlayer write <ORACLE> request_price --args "ETH/USD" --fee-value 100000000000000000
 ```
 
 Returns a `price_id` like `"ETH/USD:7"`. Costs the configured fee; requests for a pair
 updated within the last 60 seconds revert *before* any fetch, so the caller keeps their
 money instead of buying a duplicate.
+
+`--fee-value` is the consensus deposit and is **required** for this method — see
+[Step 3](#step-3--request-a-fresh-price-needs-an-account).
 
 ### Read a price (free, no transaction)
 

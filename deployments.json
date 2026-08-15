@@ -57,19 +57,44 @@
       "max_age_seconds": 900,
       "min_confidence": "MEDIUM"
     },
+    "cli_note": "request_price REQUIRES --fee-value on Bradbury (0.1 GEN used). Without it the consensus contract reverts the EVM tx in ~3s with value 0x0. Cheap deterministic writes such as set_fee succeed without it.",
     "live_requests": [
       {
         "pair": "ETH/USD",
+        "seq": 1,
         "tx": "0xd1b021abc097bece9f52c323121dfe20e77b10e805a7b125389e5a796fbad173",
         "price_atto": "1877599524608443050000",
         "price_usd": 1877.5995246084431,
+        "timestamp": 1786789721,
         "confidence": "HIGH",
         "n_sources": 6,
         "n_attempted": 7,
         "spread_bps": 9,
         "seconds_to_consensus": 56,
         "failed_source": "yahoo: ungrounded (grounding check rejected the extracted number)"
+      },
+      {
+        "pair": "ETH/USD",
+        "seq": 2,
+        "price_atto": "1879285000000000000000",
+        "price_usd": 1879.285,
+        "timestamp": 1786791368,
+        "confidence": "HIGH"
+      },
+      {
+        "pair": "ETH/USD",
+        "seq": 3,
+        "price_atto": "1878505000000000000000",
+        "price_usd": 1878.505,
+        "timestamp": 1786794348,
+        "confidence": "HIGH",
+        "seconds_to_consensus": 409
       }
-    ]
+    ],
+    "twap_after_3_records": {
+      "twap_atto": "1878668638190945924837",
+      "samples": 3,
+      "window_seconds": 5091
+    }
   }
 }
