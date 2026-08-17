@@ -3,6 +3,7 @@
     "summary": "Validators bind the stored price by exact quantization-bucket equality and the stored confidence by exact match. The stored price is the bucket midpoint, derived from the bucket rather than from the leader's raw median, so two accepted outputs for one request cannot differ.",
     "quant_bps": 50,
     "bucket_notation": "idx@step_atto - the price is the midpoint of [idx*step, (idx+1)*step)",
+    "source_matches_deployment": "Both networks were deployed from contracts/ConsensusPrice.py at commit of this file, 40292 bytes, unmodified since.",
     "supersedes": {
       "studionet": "0x6dc688b2F104FB124B2a3bd17F7374b68dF06C53",
       "testnet-bradbury": "0xF6d254596B58B8c3898e33FA871ee17f68e94fB2",
@@ -13,106 +14,37 @@
     "chainId": "61999",
     "rpc": "https://studio.genlayer.com/api",
     "ConsensusPrice": {
-      "address": "0x425beaf77B7CEB944D6F0fE9e5fcf08ff9B00171",
-      "deploy_tx": "0x8eea4be695eb823e048a2f790e31a7fdc9ce943bc300f253cf012535d1446c4c",
+      "address": "0x39C4f40ACe9A868F8158909CdCd03281388AeC10",
+      "deploy_tx": "0x912aab10b39ba10febf60587ff4c9643ad3cd58ea33e4788c7177feee55ee596",
       "owner": "0xC70FF4C06aEcb796ED712029EE548834764c9Fe8",
       "fee_wei": 0,
       "quant_bps": 50,
       "min_request_interval": 0
     },
     "PriceConsumer": {
-      "address": "0x41F6dc7dF7599aA4a0346fFD0a3cF21e232143a9",
-      "deploy_tx": "0x2c98a654ec79ac42b12fbeba2744ca284922325587ddec98269b0015e94ab3a7",
-      "oracle": "0x425beaf77B7CEB944D6F0fE9e5fcf08ff9B00171",
+      "address": "0xcFdF91ac7e28d3E4Aa384f0cDcd4b1f715130d1B",
+      "deploy_tx": "0x49fbc9f46ffbe4fb53c3402e130a3e0d756fd17b345b9769f3c7c594543e27c8",
+      "oracle": "0x39C4f40ACe9A868F8158909CdCd03281388AeC10",
       "max_age_seconds": 900,
       "min_confidence": "MEDIUM"
     },
-    "determinism_check": {
-      "method": "three consecutive request_price(\"ETH/USD\") rounds, rate limit set to 0",
-      "verdict": "identical price, bucket and confidence across all three independent consensus rounds",
-      "live_requests": [
-        {
-          "seq": 1,
-          "timestamp": 1786941916,
-          "price_atto": "1902500000000000000000",
-          "price_usd": 1902.5,
-          "bucket": "380@5000000000000000000",
-          "confidence": "HIGH",
-          "n_sources": 6,
-          "n_attempted": 7,
-          "spread_bps": 0,
-          "deviation_bps": 0
-        },
-        {
-          "seq": 2,
-          "timestamp": 1786941996,
-          "price_atto": "1902500000000000000000",
-          "price_usd": 1902.5,
-          "bucket": "380@5000000000000000000",
-          "confidence": "HIGH",
-          "n_sources": 6,
-          "spread_bps": 0,
-          "deviation_bps": 0
-        },
-        {
-          "seq": 3,
-          "tx": "0xbe8778137adc2a965337a1a262df972e4853d9668ab3261d9a8aa7b5bfc21c7b",
-          "timestamp": 1786942052,
-          "price_atto": "1902500000000000000000",
-          "price_usd": 1902.5,
-          "bucket": "380@5000000000000000000",
-          "confidence": "HIGH",
-          "n_sources": 5,
-          "spread_bps": 0,
-          "deviation_bps": 0,
-          "note": "one fewer source than rounds 1-2 and still the identical stored value"
-        }
-      ],
-      "consumer_read": {
-        "call": "quote(\"ETH/USD\", 2.5e18)",
-        "price": "1902500000000000000000",
-        "value_usd_atto": "4756250000000000000000",
-        "confidence": "HIGH"
-      }
-    }
-  },
-  "testnet-bradbury": {
-    "explorer": "https://explorer-bradbury.genlayer.com",
-    "ConsensusPrice": {
-      "address": "0x0f1dC3655d5312D1E63264e7e679524D756C1797",
-      "deploy_tx": "0x90f6452b5cddbb83786be509f14a59024ee353a5d631541783aaad4ddb223f09",
-      "owner": "0xC70FF4C06aEcb796ED712029EE548834764c9Fe8",
-      "fee_wei": 0,
-      "quant_bps": 50,
-      "min_request_interval": 0
-    },
-    "PriceConsumer": {
-      "address": "0x59CC24eb6Bb167d0bFbD9984E67dd273285472a8",
-      "deploy_tx": "0x4449b9b6fd72c4d3ce507512303c433d241afa84927ef6afaeeab5449b0d67ec",
-      "oracle": "0x0f1dC3655d5312D1E63264e7e679524D756C1797",
-      "max_age_seconds": 900,
-      "min_confidence": "MEDIUM"
-    },
-    "cli_note": "request_price REQUIRES --fee-value on Bradbury (0.2 GEN used here). CLI 0.39.2 has no --gas flag; --fee-value is the fee deposit. Leader timeouts are common on this network and simply need a retry - they are not consensus failures.",
     "determinism_check": {
       "method": "four request_price(\"ETH/USD\") rounds, rate limit set to 0",
-      "verdict": "seq 3 and seq 4 ran 46s apart and are byte-identical. seq 1 -> seq 2 sat 823s apart (leader timeouts forced retries) and moved exactly one bucket, which is the market moving 26 bps, not consensus drifting.",
+      "verdict": "seq 2, 3 and 4 are byte-identical across 95s and three independent consensus rounds, including seq 3 which ran on one fewer source. seq 1 -> seq 2 moved exactly one bucket because ETH moved 26 bps in 21s.",
       "live_requests": [
         {
           "seq": 1,
-          "timestamp": 1786942673,
+          "timestamp": 1786944632,
           "price_atto": "1902500000000000000000",
           "price_usd": 1902.5,
           "bucket": "380@5000000000000000000",
           "confidence": "HIGH",
           "n_sources": 6,
-          "n_attempted": 7,
-          "spread_bps": 0,
-          "validator_votes": "4 AGREE, 1 TIMEOUT"
+          "spread_bps": 13
         },
         {
           "seq": 2,
-          "timestamp": 1786943496,
+          "timestamp": 1786944653,
           "price_atto": "1897500000000000000000",
           "price_usd": 1897.5,
           "bucket": "379@5000000000000000000",
@@ -120,41 +52,106 @@
           "n_sources": 6,
           "spread_bps": 26,
           "deviation_bps": 26,
-          "note": "823s after seq 1; one bucket down as ETH moved"
+          "note": "21s after seq 1; the market moved one bucket down"
         },
         {
           "seq": 3,
-          "timestamp": 1786943719,
-          "price_atto": "1902500000000000000000",
-          "price_usd": 1902.5,
-          "bucket": "380@5000000000000000000",
+          "timestamp": 1786944686,
+          "price_atto": "1897500000000000000000",
+          "price_usd": 1897.5,
+          "bucket": "379@5000000000000000000",
           "confidence": "HIGH",
+          "n_sources": 5,
           "spread_bps": 26,
-          "deviation_bps": 26,
-          "validator_votes": "5 AGREE"
+          "deviation_bps": 0,
+          "note": "identical to seq 2 on one fewer source"
         },
         {
           "seq": 4,
-          "timestamp": 1786943765,
-          "price_atto": "1902500000000000000000",
-          "price_usd": 1902.5,
-          "bucket": "380@5000000000000000000",
+          "timestamp": 1786944748,
+          "price_atto": "1897500000000000000000",
+          "price_usd": 1897.5,
+          "bucket": "379@5000000000000000000",
           "confidence": "HIGH",
-          "spread_bps": 13,
-          "deviation_bps": 0,
-          "note": "46s after seq 3, byte-identical storage despite a different source spread",
-          "validator_votes": "3 AGREE, 1 TIMEOUT, 1 DETERMINISTIC_VIOLATION"
+          "n_sources": 6,
+          "spread_bps": 26,
+          "deviation_bps": 0
         }
       ],
-      "twap_after_4_records": {
-        "twap_atto": "1901776913099870298313",
-        "samples": 4,
-        "window_seconds": 1542
+      "consumer_read": {
+        "call": "quote(\"ETH/USD\", 2.5e18)",
+        "price": "1897500000000000000000",
+        "value_usd_atto": "4743750000000000000000",
+        "confidence": "HIGH"
+      }
+    }
+  },
+  "testnet-bradbury": {
+    "explorer": "https://explorer-bradbury.genlayer.com",
+    "ConsensusPrice": {
+      "address": "0xa7a96AF9A750F7465321980182E67bAd7E668A79",
+      "deploy_tx": "0x3395787ec192b6069d8bedc4baf84737fa7d170ae0b10a365e2c20700a49ff7f",
+      "owner": "0xC70FF4C06aEcb796ED712029EE548834764c9Fe8",
+      "fee_wei": 0,
+      "quant_bps": 50,
+      "min_request_interval": 0
+    },
+    "PriceConsumer": {
+      "address": "0xa67e231e29623ceeacd03A7314C273b0101F1490",
+      "deploy_tx": "0x505129ad9c1c74366bfe407e2bd53cfdd543358acd0c47543903d052cec85e49",
+      "oracle": "0xa7a96AF9A750F7465321980182E67bAd7E668A79",
+      "max_age_seconds": 900,
+      "min_confidence": "MEDIUM"
+    },
+    "cli_note": "request_price REQUIRES --fee-value on Bradbury (0.2 GEN used here). CLI 0.39.2 has no --gas flag; --fee-value is the fee deposit. LEADER_TIMEOUT / VALIDATORS_TIMEOUT were frequent during this session - those are nodes not answering, not consensus disagreements, and a retry clears them.",
+    "determinism_check": {
+      "method": "three request_price(\"ETH/USD\") rounds, rate limit set to 0",
+      "verdict": "all three byte-identical across 1706s and three independent consensus rounds, on three different source counts (7, 6, 6). Cross-network: the same value and bucket as Studionet seq 2-4, from a completely different validator set.",
+      "live_requests": [
+        {
+          "seq": 1,
+          "timestamp": 1786944896,
+          "price_atto": "1897500000000000000000",
+          "price_usd": 1897.5,
+          "bucket": "379@5000000000000000000",
+          "confidence": "HIGH",
+          "n_sources": 7,
+          "n_attempted": 7,
+          "spread_bps": 26,
+          "validator_votes": "3 AGREE, 2 TIMEOUT"
+        },
+        {
+          "seq": 2,
+          "timestamp": 1786945522,
+          "price_atto": "1897500000000000000000",
+          "price_usd": 1897.5,
+          "bucket": "379@5000000000000000000",
+          "confidence": "HIGH",
+          "n_sources": 6,
+          "deviation_bps": 0
+        },
+        {
+          "seq": 3,
+          "timestamp": 1786946602,
+          "price_atto": "1897500000000000000000",
+          "price_usd": 1897.5,
+          "bucket": "379@5000000000000000000",
+          "confidence": "HIGH",
+          "n_sources": 6,
+          "deviation_bps": 0,
+          "validator_votes": "3 AGREE, 2 TIMEOUT"
+        }
+      ],
+      "twap_after_3_records": {
+        "twap_atto": "1897500000000000000000",
+        "samples": 3,
+        "window_seconds": 2150,
+        "note": "equal to the spot price here only because all three records share a bucket"
       },
       "consumer_read": {
         "call": "quote(\"ETH/USD\", 2.5e18)",
-        "price": "1902500000000000000000",
-        "value_usd_atto": "4756250000000000000000",
+        "price": "1897500000000000000000",
+        "value_usd_atto": "4743750000000000000000",
         "confidence": "HIGH"
       }
     }

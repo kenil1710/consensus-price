@@ -256,8 +256,8 @@ directly. It is live on both networks:
 
 | Network | PriceConsumer | reading oracle |
 |---|---|---|
-| Bradbury | `0x59CC24eb6Bb167d0bFbD9984E67dd273285472a8` | `0x0f1dC3655d5312D1E63264e7e679524D756C1797` |
-| Studionet | `0x41F6dc7dF7599aA4a0346fFD0a3cF21e232143a9` | `0x425beaf77B7CEB944D6F0fE9e5fcf08ff9B00171` |
+| Bradbury | `0xa67e231e29623ceeacd03A7314C273b0101F1490` | `0xa7a96AF9A750F7465321980182E67bAd7E668A79` |
+| Studionet | `0xcFdF91ac7e28d3E4Aa384f0cDcd4b1f715130d1B` | `0x39C4f40ACe9A868F8158909CdCd03281388AeC10` |
 
 It demonstrates both integration styles side by side:
 
@@ -269,20 +269,20 @@ It demonstrates both integration styles side by side:
 Verified live, against real prices:
 
 ```
-$ genlayer call 0x41F6d...43a9 quote --args "ETH/USD" 2500000000000000000
+$ genlayer call 0xcFdF9...0d1B quote --args "ETH/USD" 2500000000000000000
 {
   pair: 'ETH/USD',
   amount_atto:    '2500000000000000000',   # 2.5 ETH
-  price:          '1877393480456408800000',
-  value_usd_atto: '4693483701141022000000', # $4,693.48
+  price:          '1897500000000000000000',   # bucket 379, a midpoint
+  value_usd_atto: '4743750000000000000000',   # $4,743.75 — exact, not approximate
   confidence: 'HIGH',
   age_seconds: 239
 }
 
-$ genlayer call 0x41F6d...43a9 quote --args "BTC/USD" 1000000000000000000
+$ genlayer call 0xcFdF9...0d1B quote --args "BTC/USD" 1000000000000000000
 execution failed          # no price stored for BTC/USD at the time — correctly refused
 
-$ genlayer call 0x41F6d...43a9 is_safe_to_trade --args "BTC/USD"
+$ genlayer call 0xcFdF9...0d1B is_safe_to_trade --args "BTC/USD"
 { safe: false, reason: 'no price for BTC/USD' }
 ```
 
