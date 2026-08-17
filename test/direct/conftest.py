@@ -84,10 +84,28 @@ def oracle(direct_vm, direct_deploy, direct_owner):
     return direct_deploy(str(CONTRACT))
 
 
+def contract_mod():
+    """The loaded contract module - usable from any test that has deployed the
+    oracle, including the cross-contract stack which has no `mod` fixture."""
+    return sys.modules["_contract_ConsensusPrice"]
+
+
 @pytest.fixture
 def mod(oracle):
     """The loaded contract module, for testing the pure helpers directly."""
-    return sys.modules["_contract_ConsensusPrice"]
+    return contract_mod()
+
+
+def quantized(price):
+    """The exact price the contract stores for a source fan mocked at `price`.
+
+    Every source snaps to the same lattice point, so the median is that point.
+    Tests assert against this rather than against the raw mock: the whole point
+    of the consensus fix is that storage holds a bucket midpoint, not whatever
+    number a source happened to return.
+    """
+    m = contract_mod()
+    return m._quantize(m._to_atto(price), m.DEF_QUANT_BPS)
 
 
 def mock_tier_a(vm, prices, slug="ethereum"):

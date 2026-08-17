@@ -8,8 +8,10 @@ the consensus-agreed median is written on-chain — where any other contract can
 free, forever.
 
 The price is not reported by an operator. It is the number a majority of validators
-independently arrived at, from their own network vantage points, within a 2% tolerance of
-each other.
+independently arrived at, from their own network vantage points — and *exactly* that number:
+validators agree by landing in the same quantization bucket, and the stored price is derived
+from the bucket rather than from whatever the leader happened to measure. Two accepted
+outputs for one request cannot differ. See [Consensus](#3-consensus).
 
 ---
 
@@ -19,15 +21,15 @@ each other.
 
 | Contract | Address |
 |---|---|
-| `ConsensusPrice` | `0xF6d254596B58B8c3898e33FA871ee17f68e94fB2` |
-| `PriceConsumer` | `0x68c97558e71A8E574d7E52018115312A696146FC` |
+| `ConsensusPrice` | `0x0f1dC3655d5312D1E63264e7e679524D756C1797` |
+| `PriceConsumer` | `0x59CC24eb6Bb167d0bFbD9984E67dd273285472a8` |
 
 **Studionet**
 
 | Contract | Address |
 |---|---|
-| `ConsensusPrice` | `0x6dc688b2F104FB124B2a3bd17F7374b68dF06C53` |
-| `PriceConsumer` | `0x4dfBA3605eA958Cea3b5c67ED8Ff6BaAE75aD29A` |
+| `ConsensusPrice` | `0x425beaf77B7CEB944D6F0fE9e5fcf08ff9B00171` |
+| `PriceConsumer` | `0x41F6dc7dF7599aA4a0346fFD0a3cF21e232143a9` |
 
 Full transaction hashes in [`deployments.json`](deployments.json).
 
@@ -38,31 +40,34 @@ below can be called in the browser with no wallet and no install.
 Real result from a live request, not a mock:
 
 ```
-$ genlayer call 0x6dc688b2F104FB124B2a3bd17F7374b68dF06C53 get_latest_price --args "ETH/USD"
+$ genlayer call 0x425beaf77B7CEB944D6F0fE9e5fcf08ff9B00171 get_latest_price --args "ETH/USD"
 
 {
   pair: 'ETH/USD',
-  price: '1877393480456408800000',    # $1,877.393480456408800
+  price: '1902500000000000000000',     # $1,902.50 — the bucket midpoint
   decimals: 18,
   confidence: 'HIGH',
+  quant_bps: 50,
+  bucket: '380@5000000000000000000',   # bucket 380, $5 wide -> [$1900, $1905)
   n_sources: 6,                        # of 7 attempted
-  spread_bps: 9,                       # widest source is 0.09% off the median
+  spread_bps: 0,                       # all six landed in one bucket
   flags: 'FIRST',
   is_stale: false,
   sources: {
-    coinbase:  '1877330000000000000000',
-    coingecko: '1877280000000000000000',
-    gemini:    '1877500000000000000000',
-    kucoin:    '1879220000000000000000',
-    paprika:   '1877396960912817600000',
-    yahoo:     '1877390000000000000000'
+    coinbase:  '1902500000000000000000',
+    coingecko: '1902500000000000000000',
+    gemini:    '1902500000000000000000',
+    kucoin:    '1902500000000000000000',
+    paprika:   '1902500000000000000000',
+    yahoo:     '1902500000000000000000'
   }
 }
 ```
 
-Six independent venues agreed to within 0.09%, and the seventh — Binance — is recorded
-on-chain as having failed with `[EXTERNAL] http 451`, geo-blocked from validator
-infrastructure. That is the design working: one dead source is data, not an outage.
+Six independent venues, each fetched at its own slightly different real price, all snapped
+onto the same lattice point — which is why `spread_bps` reads `0` and why any validator that
+agreed stored this exact `u256`. The seventh source is recorded on-chain with its failure
+reason. That is the design working: one dead source is data, not an outage.
 
 ### The same price from two different networks
 
@@ -71,19 +76,39 @@ on different infrastructure:
 
 | | Studionet | Bradbury |
 |---|---|---|
-| ETH/USD | `$1,877.393480456408800` | `$1,877.599524608443050` |
+| ETH/USD | `$1,902.50` | `$1,902.50` |
+| Bucket | `380@5000000000000000000` | `380@5000000000000000000` |
 | Sources used | 6 of 7 | 6 of 7 |
 | Confidence | HIGH | HIGH |
-| Spread | 9 bps | 9 bps |
-| Source that failed | `binance` — `http 451` | `yahoo` — `ungrounded` |
+| Source that failed | `binance` — geo-blocked | `yahoo` — `ungrounded` |
 
-**Different networks, different failing sources, prices 1.1 bps apart.** Binance is
-geo-blocked from Studionet's infrastructure but reachable from Bradbury's. Yahoo is the
-reverse: on Bradbury the model returned a number that did not literally appear in the
-rendered page, and the grounding check discarded it rather than trusting it — the
-prompt-injection defense rejecting a bad extraction in production, not in a test.
+**Different networks, different validator sets, different failing sources — same bucket, same
+stored `u256`.** Binance is geo-blocked from Studionet's infrastructure but reachable from
+Bradbury's. Yahoo is the reverse: on Bradbury the model returned a number that did not
+literally appear in the rendered page, and the grounding check discarded it rather than
+trusting it — the prompt-injection defense rejecting a bad extraction in production, not in a
+test.
 
-Neither failure moved the price. That is the entire point of the median.
+Neither failure moved the price. That is the point of the median; landing on the identical
+`u256` from two independent validator sets is the point of the lattice.
+
+### Determinism, checked live
+
+Three consecutive `request_price("ETH/USD")` rounds on Studionet, rate limit set to `0`:
+
+```
+ETH/USD:1   1902500000000000000000   bucket 380@5e18   HIGH   6 sources   ts 1786941916
+ETH/USD:2   1902500000000000000000   bucket 380@5e18   HIGH   6 sources   ts 1786941996
+ETH/USD:3   1902500000000000000000   bucket 380@5e18   HIGH   5 sources   ts 1786942052
+```
+
+Three independent consensus rounds, byte-identical storage — including round 3, which ran on
+one fewer source. On Bradbury, rounds 3 and 4 ran 46 s apart and are likewise identical
+(`1902500000000000000000`, bucket `380@5e18`, HIGH). Bradbury rounds 1 and 2 sat 823 s apart
+because of leader timeouts, and moved exactly one bucket down — ETH itself moved 26 bps. The
+oracle is deterministic, not deaf.
+
+Full records in [`deployments.json`](deployments.json).
 
 ---
 
@@ -104,7 +129,7 @@ Two ways in. **Option A needs nothing installed and no wallet** — start there.
 **One-click import:**
 
 ```
-https://studio.genlayer.com/?import-contract=0x6dc688b2F104FB124B2a3bd17F7374b68dF06C53
+https://studio.genlayer.com/?import-contract=0x425beaf77B7CEB944D6F0fE9e5fcf08ff9B00171
 ```
 
 This loads the deployed Studionet instance: Studio fetches the on-chain source into the
@@ -129,7 +154,7 @@ explicit `--fee-value` deposit — see [Step 3](#step-3--request-a-fresh-price-n
 ### The Bradbury explorer
 
 ```
-https://explorer-bradbury.genlayer.com/address/0xF6d254596B58B8c3898e33FA871ee17f68e94fB2
+https://explorer-bradbury.genlayer.com/address/0x0f1dC3655d5312D1E63264e7e679524D756C1797
 ```
 
 Useful for **verifying** the deployment — it shows the on-chain source, the balance, and
@@ -142,14 +167,14 @@ CLI to actually call anything.
 The five steps below are written as CLI commands against Bradbury. **In Studio, run the
 same steps** by selecting the identical method name and arguments in the interaction panel —
 the contract is the same and the fee is zeroed on both deployments. Substitute the Studionet
-addresses (`0x6dc688b2…` oracle, `0x4dfBA360…` consumer) if you are reading along there.
+addresses (`0x425beaf7…` oracle, `0x41F6dc7d…` consumer) if you are reading along there.
 
 ### Step 1 — Current state (no wallet)
 
 ```bash
-genlayer call 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 get_stats
-genlayer call 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 get_config
-genlayer call 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 decimals
+genlayer call 0x0f1dC3655d5312D1E63264e7e679524D756C1797 get_stats
+genlayer call 0x0f1dC3655d5312D1E63264e7e679524D756C1797 get_config
+genlayer call 0x0f1dC3655d5312D1E63264e7e679524D756C1797 decimals
 ```
 
 `get_stats` shows total requests and unique pairs. `get_config` shows every tunable plus
@@ -158,8 +183,8 @@ genlayer call 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 decimals
 Also worth calling, because it is the transparency claim made checkable:
 
 ```bash
-genlayer call 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 get_sources
-genlayer call 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 get_governance_log --args 20
+genlayer call 0x0f1dC3655d5312D1E63264e7e679524D756C1797 get_sources
+genlayer call 0x0f1dC3655d5312D1E63264e7e679524D756C1797 get_governance_log --args 20
 ```
 
 `get_sources` reports per-source `ok_count`, `fail_count`, `reliability_pct`, and the real
@@ -169,34 +194,40 @@ and timestamp.
 ### Step 2 — Existing price data (no wallet)
 
 ```bash
-genlayer call 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 get_latest_price --args "ETH/USD"
-genlayer call 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 get_price_history --args "ETH/USD" 5
-genlayer call 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 get_twap --args "ETH/USD" 5
+genlayer call 0x0f1dC3655d5312D1E63264e7e679524D756C1797 get_latest_price --args "ETH/USD"
+genlayer call 0x0f1dC3655d5312D1E63264e7e679524D756C1797 get_price_history --args "ETH/USD" 5
+genlayer call 0x0f1dC3655d5312D1E63264e7e679524D756C1797 get_twap --args "ETH/USD" 5
 ```
 
 Returns real prices from live requests, with the full per-source breakdown in `sources` and
 the failure reason for any source that did not answer. `get_price_history` returns however
 many records exist, newest first — it does not pad to the count you ask for.
 
-At the time of writing the Bradbury oracle holds three ETH/USD records, all HIGH confidence:
+At the time of writing the Bradbury oracle holds four ETH/USD records, all HIGH confidence:
 
 ```
-ETH/USD:3   1878505000000000000000    ts 1786794348
-ETH/USD:2   1879285000000000000000    ts 1786791368
-ETH/USD:1   1877599524608443050000    ts 1786789721
+ETH/USD:4   1902500000000000000000   bucket 380@5e18   ts 1786943765
+ETH/USD:3   1902500000000000000000   bucket 380@5e18   ts 1786943719
+ETH/USD:2   1897500000000000000000   bucket 379@5e18   ts 1786943496
+ETH/USD:1   1902500000000000000000   bucket 380@5e18   ts 1786942673
 
-get_twap("ETH/USD", 5) -> twap 1878668638190945924837, samples 3, window 5091s
+get_twap("ETH/USD", 5) -> twap 1901776913099870298313, samples 4, window 1542s
 ```
 
-Note the TWAP is not the mean of the three: each record is weighted by how long it stood as
-the latest price, which is what makes it resistant to a brief spike.
+Records 3 and 4 are 46 seconds apart and byte-identical — two independent consensus rounds
+that could not have stored different numbers. Record 2 sits one bucket lower because ETH
+actually moved 26 bps in the 823 seconds since record 1.
 
-Divide `price` by 10^18 for USD: `1877599524608443050000` is `$1,877.599524608443050`.
+Note the TWAP is not the mean of the four: each record is weighted by how long it stood as
+the latest price, which is what makes it resistant to a brief spike. It is also the one
+number here that is *not* on the lattice, since it is an average over time.
+
+Divide `price` by 10^18 for USD: `1902500000000000000000` is `$1,902.50`.
 
 ### Step 3 — Request a fresh price (needs an account)
 
 ```bash
-genlayer write 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 request_price \
+genlayer write 0x0f1dC3655d5312D1E63264e7e679524D756C1797 request_price \
   --args "ETH/USD" --fee-value 100000000000000000
 ```
 
@@ -223,7 +254,7 @@ Bradbury ranged from 56 seconds to 409 seconds depending on network load. Watch 
 `resultName: 'AGREE'`. Then:
 
 ```bash
-genlayer call 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 get_latest_price --args "ETH/USD"
+genlayer call 0x0f1dC3655d5312D1E63264e7e679524D756C1797 get_latest_price --args "ETH/USD"
 ```
 
 `timestamp` and `price_id` will have advanced, and `flags` will no longer read `FIRST`.
@@ -235,9 +266,9 @@ genlayer call 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 get_latest_price --args
 ### Step 4 — A different pair, zero configuration
 
 ```bash
-genlayer write 0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 request_price \
+genlayer write 0x0f1dC3655d5312D1E63264e7e679524D756C1797 request_price \
   --args "BTC/USD" --fee-value 100000000000000000
-genlayer call  0xF6d254596B58B8c3898e33FA871ee17f68e94fB2 get_latest_price --args "BTC/USD"
+genlayer call  0x0f1dC3655d5312D1E63264e7e679524D756C1797 get_latest_price --args "BTC/USD"
 ```
 
 No setup was needed for BTC/USD, and none is needed for `SOL/USD`, `AVAX/USD`, or
@@ -251,7 +282,7 @@ than storing garbage.
 returns comes from a free cross-contract read of the oracle.
 
 ```bash
-genlayer call 0x68c97558e71A8E574d7E52018115312A696146FC quote --args "ETH/USD" 2500000000000000000
+genlayer call 0x59CC24eb6Bb167d0bFbD9984E67dd273285472a8 quote --args "ETH/USD" 2500000000000000000
 ```
 
 Returns the USD value of 2.5 ETH — `value_usd_atto: '4693998811521107625000'`, about
@@ -260,10 +291,10 @@ Returns the USD value of 2.5 ETH — `value_usd_atto: '4693998811521107625000'`,
 The more interesting call is the one that **refuses**:
 
 ```bash
-genlayer call 0x68c97558e71A8E574d7E52018115312A696146FC quote --args "DOGE/USD" 1000000000000000000
+genlayer call 0x59CC24eb6Bb167d0bFbD9984E67dd273285472a8 quote --args "DOGE/USD" 1000000000000000000
 # execution failed — no price stored for DOGE/USD
 
-genlayer call 0x68c97558e71A8E574d7E52018115312A696146FC is_safe_to_trade --args "DOGE/USD"
+genlayer call 0x59CC24eb6Bb167d0bFbD9984E67dd273285472a8 is_safe_to_trade --args "DOGE/USD"
 # { safe: false, reason: 'no price for DOGE/USD' }
 ```
 
@@ -280,7 +311,7 @@ the file in this repository, byte for byte:
 ```bash
 curl -s -X POST https://rpc-bradbury.genlayer.com -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"gen_getContractCode",
-       "params":[{"address":"0xF6d254596B58B8c3898e33FA871ee17f68e94fB2"}],"id":1}' \
+       "params":[{"address":"0x0f1dC3655d5312D1E63264e7e679524D756C1797"}],"id":1}' \
   | python3 -c "import json,sys,base64,hashlib; \
       print(hashlib.sha256(base64.b64decode(json.load(sys.stdin)['result'])).hexdigest())"
 
@@ -328,21 +359,42 @@ the result while three Tier A sources are alive.
 
 Validators do not compare individual source prices — those legitimately differ between
 nodes fetching different venues milliseconds apart, and comparing them would guarantee
-permanent consensus failure. They compare two things:
+permanent consensus failure. They compare three things, and **the two that decide what gets
+stored are exact equality, not a tolerance**:
 
-- **Median tolerance** — leader and validator medians within 200 bps.
-- **Confidence agreement** — the two nodes' independently computed confidence scores must
-  not differ by more than one level.
+- **Same bucket** *(binding)* — every price snaps onto a quantization lattice, and the
+  leader's median and the validator's median must land in the *same* bucket. The stored price
+  is the bucket's midpoint, so agreeing on the bucket is agreeing on the exact `u256` stored.
+- **Same confidence** *(binding)* — the two nodes' independently computed confidence labels
+  must match exactly. `HIGH` and `MEDIUM` are different answers to "may I act on this?", so
+  one rank of slack would let two accepted outputs land either side of a consumer's
+  `min_confidence` gate.
+- **Median tolerance** — leader and validator medians still within `tolerance_bps` (200), so
+  widening the lattice through governance can never widen consensus past the tolerance.
 
-The second gate is the one a pure median check misses. A leader claiming `HIGH` confidence
-while a validator independently observes scattered sources means the leader saw a
+Why this matters: a tolerance gate answers "was the leader close?", which is a different
+question from "is the stored number agreed?". Under a pure tolerance the leader's exact
+median still lands in storage, and a *different* leader with a different median would have
+passed the same gate and stored a different number — two accepted outputs, two different
+quotes. Deriving the stored price from the bucket closes that.
+
+The confidence gate is also the one a pure median check misses. A leader claiming `HIGH`
+confidence while a validator independently observes scattered sources means the leader saw a
 suspiciously clean world. That disagreement forces leader rotation.
+
+**The lattice**, in short: `step = anchor(p) * quant_bps / 10000`, where `anchor` is the
+largest `c × 10^d ≤ p` for `c ∈ {1, 2, 5}`. At `quant_bps = 50` that is a bucket 20–50 bps
+wide at every magnitude — about `$5` at ETH ≈ `$1,900`, about `$250` at BTC ≈ `$95,000`. The
+cost is stated plainly in [DESIGN.md §3.6](docs/DESIGN.md): the stored price sits up to half a
+bucket (≈13 bps) from the median that produced it, and a price sitting exactly on a bucket
+edge can make two honest nodes disagree — in which case the round fails closed and the caller
+retries, which is strictly better than storing a value two nodes never agreed on.
 
 ### 4. Post-consensus write
 
-The median returned by `run_nondet_unsafe` is written to a per-pair ring buffer with its
-sequence number, flags, spread, deviation from the previous record, and the full per-source
-breakdown as JSON for transparency.
+`_quantize(agreed_median)` — the bucket midpoint, not the leader's raw number — is written to
+a per-pair ring buffer with its sequence number, bucket id, flags, spread, deviation from the
+previous record, and the full per-source breakdown as JSON for transparency.
 
 **The invariant:** a request either stores a price that ≥3 independent sources and a
 majority of validators agreed on, or it stores nothing. There is no partial-credit path
@@ -417,7 +469,7 @@ two aggregator sources join in once the owner registers a slug via `set_pair_slu
 |---|---|
 | `request_price(pair)` | public, payable |
 | `add_source(...)`, `set_source_enabled(...)`, `set_pair_slugs(...)` | owner |
-| `set_params(...)`, `set_fee(...)`, `set_paused(...)` | owner |
+| `set_params(...)`, `set_quant_bps(...)`, `set_fee(...)`, `set_paused(...)` | owner |
 | `transfer_ownership(...)`, `withdraw(...)` | owner |
 
 **View — all free**

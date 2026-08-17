@@ -2,7 +2,8 @@
 
 import pytest
 
-from conftest import FEE, TIER_A, addr_hex, mock_all, mock_tier_a, mock_page, request
+from conftest import (FEE, TIER_A, addr_hex, mock_all, mock_tier_a, mock_page,
+                      quantized, request)
 
 
 def test_happy_path_stores_consensus_median(oracle, direct_vm, direct_alice):
@@ -43,7 +44,8 @@ def test_median_is_not_moved_by_one_outlier(oracle, direct_vm, direct_alice):
     request(oracle, direct_vm, direct_alice)
 
     rec = oracle.get_latest_price("ETH/USD")
-    assert abs(rec["price"] - 1880 * 10**18) < 10**18
+    assert rec["price"] == quantized(1880.0)
+    assert abs(rec["price"] - 1880 * 10**18) < 3 * 10**18  # within half a bucket
     # but the disagreement is surfaced, not hidden
     assert rec["spread_bps"] > 20000
     assert rec["confidence"] in ("MEDIUM", "HIGH")
@@ -130,9 +132,11 @@ def test_supported_pairs_and_stats(oracle, direct_vm, direct_alice, direct_owner
 def test_history_ring_buffer_wraps_and_stays_newest_first(oracle, direct_vm, direct_alice, direct_owner):
     direct_vm.sender = direct_owner
     oracle.set_params(200, 10000, 900, 3, 0, 4)  # depth 4, volatility off
+    # steps of 20 rather than 1: a 1-dollar move at $1000 lands in the same
+    # quantization bucket, which is exactly what the lattice is for
     for i in range(6):
         direct_vm.clear_mocks()
-        mock_all(direct_vm, price=1000.0 + i)
+        mock_all(direct_vm, price=1000.0 + 20 * i)
         request(oracle, direct_vm, direct_alice)
 
     hist = oracle.get_price_history("ETH/USD", 0)

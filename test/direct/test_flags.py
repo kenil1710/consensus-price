@@ -2,7 +2,7 @@
 
 import pytest
 
-from conftest import TIER_A, mock_all, mock_tier_a, mock_page, request
+from conftest import TIER_A, mock_all, mock_tier_a, mock_page, quantized, request
 
 SCALE = 10**18
 
@@ -44,7 +44,7 @@ def test_flash_move_is_flagged_but_still_stored(open_oracle, direct_vm, direct_a
     rec = open_oracle.get_latest_price("ETH/USD")
     assert rec["flags"] == "HIGH_VOLATILITY"
     assert 2990 <= rec["deviation_bps"] <= 3010
-    assert abs(rec["price"] - 700 * SCALE) < SCALE  # stored, not rejected
+    assert rec["price"] == quantized(700.0)  # stored, not rejected
 
 
 def test_volatility_threshold_is_configurable(oracle, direct_vm, direct_alice, direct_owner):
@@ -76,7 +76,7 @@ def test_get_price_checked_passes_a_good_price(open_oracle, direct_vm, direct_al
     post(open_oracle, direct_vm, direct_alice, 1000.0)
     out = open_oracle.get_price_checked("ETH/USD", 900, "MEDIUM")
     assert out["found"] is True
-    assert abs(out["price"] - 1000 * SCALE) < SCALE
+    assert out["price"] == quantized(1000.0)
 
 
 def test_get_price_checked_reverts_when_stale(open_oracle, direct_vm, direct_alice):
@@ -126,8 +126,8 @@ def test_twap_weights_by_time_not_sample_count(open_oracle, direct_vm, direct_al
     assert out["window_seconds"] == 3660
     # simple mean would be 1500; time weighting must land far nearer 1000
     assert out["twap"] < 1100 * SCALE
-    expected = (1000 * SCALE * 3600 + 2000 * SCALE * 60) // 3660
-    assert abs(out["twap"] - expected) < SCALE
+    expected = (quantized(1000.0) * 3600 + quantized(2000.0) * 60) // 3660
+    assert out["twap"] == expected
 
 
 def test_twap_on_unknown_pair_is_safe(open_oracle):

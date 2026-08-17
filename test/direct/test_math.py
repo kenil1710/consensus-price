@@ -42,6 +42,85 @@ def test_bps_does_not_overflow_at_price_ceiling(mod):
     assert mod._bps(hi, hi // 2) == 10000
 
 
+# --- the quantization lattice ---
+
+Q = 50  # DEF_QUANT_BPS
+
+
+def test_anchor_walks_the_1_2_5_ladder(mod):
+    assert mod._anchor(1 * SCALE) == 1 * SCALE
+    assert mod._anchor(1999 * SCALE // 1000) == 1 * SCALE
+    assert mod._anchor(2 * SCALE) == 2 * SCALE
+    assert mod._anchor(49 * SCALE // 10) == 2 * SCALE
+    assert mod._anchor(5 * SCALE) == 5 * SCALE
+    assert mod._anchor(99 * SCALE // 10) == 5 * SCALE
+    assert mod._anchor(10 * SCALE) == 10 * SCALE
+
+
+def test_bucket_width_stays_proportional_across_magnitudes(mod):
+    """Without the 1-2-5 ladder a plain decade anchor collapses the bucket to
+    ~5 bps at the top of a decade, and honest nodes would never agree there.
+    Every realistic price must sit in a bucket of 20-50 bps."""
+    for usd in (0.31, 0.99, 4.2, 42.5, 199.0, 1877.6, 4999.0, 62954.0, 95000.0):
+        p = int(usd * SCALE)
+        step, _ = mod._bucket(p, Q)
+        width_bps = step * 10000 // p
+        assert 19 <= width_bps <= Q, "%s -> %d bps" % (usd, width_bps)
+
+
+def test_quantize_is_idempotent(mod):
+    """The stored price must re-quantize to itself, or the bucket a consumer
+    reads back would not be the bucket consensus agreed on."""
+    for usd in (0.87, 42.5, 1877.6, 1999.99, 2000.0, 5000.01, 95000.0):
+        p = int(usd * SCALE)
+        q = mod._quantize(p, Q)
+        assert mod._quantize(q, Q) == q
+        assert mod._bucket(q, Q) == mod._bucket(p, Q)
+
+
+def test_quantize_lands_inside_its_own_bucket(mod):
+    """Midpoint, so the stored price is never more than half a bucket from the
+    median that produced it."""
+    for usd in (0.87, 42.5, 1877.6, 95000.0):
+        p = int(usd * SCALE)
+        step, idx = mod._bucket(p, Q)
+        q = mod._quantize(p, Q)
+        assert idx * step <= q < (idx + 1) * step
+        assert abs(q - p) <= step // 2 + 1
+
+
+def test_bucket_is_constant_across_a_bucket_and_changes_between(mod):
+    p = 1877_600000000000000000
+    step, idx = mod._bucket(p, Q)
+    lo = idx * step
+    # every point in the bucket quantizes to the identical stored value
+    for off in (0, 1, step // 3, step // 2, step - 1):
+        assert mod._quantize(lo + off, Q) == mod._quantize(p, Q)
+    # and the neighbours do not
+    assert mod._quantize(lo - 1, Q) != mod._quantize(p, Q)
+    assert mod._quantize(lo + step, Q) != mod._quantize(p, Q)
+
+
+def test_quantize_is_monotonic(mod):
+    """A higher median can never store a lower price - including across the
+    ladder steps at 2x and 5x, where the bucket width changes."""
+    prev = -1
+    p = 1 * SCALE // 10
+    while p < 200000 * SCALE:
+        q = mod._quantize(p, Q)
+        assert q >= prev, "non-monotonic at %d" % p
+        prev = q
+        p = p + max(1, p // 2000)  # stays dense relative to the bucket width
+
+
+def test_bucket_handles_degenerate_input(mod):
+    assert mod._quantize(0, Q) == 0
+    assert mod._quantize(-5, Q) == 0
+    assert mod._bucket(0, Q) == (1, 0)
+    # a dust price still gets a valid bucket rather than dividing by zero
+    assert mod._quantize(1, Q) >= 0
+
+
 def test_confidence_high_requires_four_tight_sources(mod):
     tight = [1000 * SCALE, 1001 * SCALE, 1000 * SCALE, 999 * SCALE, 1000 * SCALE]
     assert mod._confidence(tight, mod._median(tight)) == "HIGH"

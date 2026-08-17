@@ -2,10 +2,18 @@
 
 # ConsensusPrice - a decentralized price oracle primitive for GenLayer.
 #
-# Any account requests a price for a pair. The leader fetches N independent public
-# sources, computes the median, and validators independently re-fetch and re-derive
-# it. The consensus-agreed median is stored on-chain and readable by any other
+# Any account requests a price for a pair. The leader fetches N independent
+# public sources and computes the median; validators independently re-fetch and
+# re-derive it. The agreed median is stored on-chain and readable by any other
 # contract, for free.
+#
+# WHAT VALIDATORS BIND (see DESIGN.md 3.6)
+# Not "close enough". Prices snap onto a quantization lattice and consensus is
+# EXACT BUCKET EQUALITY; the stored price is the bucket midpoint, a function of
+# the bucket alone rather than of the leader's raw number. Confidence must match
+# EXACTLY, not within a rank. So any two outputs this contract can accept for
+# one request are identical - two accepted outputs cannot move a quote or cross
+# a consumer's confidence requirement.
 #
 # TRUST MODEL - GOVERNANCE CANNOT MANIPULATE PRICES (full text: README.md)
 # The owner CANNOT:
@@ -21,11 +29,11 @@
 #     strict majority. Owner-added sources structurally cannot decide a price.
 #  5. Act invisibly: every governance call appends to gov_log (address + time),
 #     public via get_governance_log().
-# The owner CAN enable/disable seeded sources within 3-4, add capped non-core
-# sources, register slugs, tune params within bounds, pause requests, withdraw
-# fees. Pausing cannot alter an already-stored price.
+# The owner CAN toggle seeded sources within 3-4, add capped non-core sources,
+# register slugs, tune params within bounds, pause, withdraw fees. Pausing
+# cannot alter a stored price.
 # HONEST LIMIT: influence is bounded, public and needs its own transaction - not
-# zero. At the floor of 3 core + 1 added source the owner still cannot determine
+# zero. At the floor of 3 core + 1 added source the owner still cannot decide
 # the median (1 of 4 is no majority) and still needs validators to agree.
 #
 
@@ -49,6 +57,9 @@ DEF_STALENESS = 900
 DEF_MIN_SOURCES = 3
 DEF_MIN_INTERVAL = 60
 DEF_MAX_HISTORY = 24
+DEF_QUANT_BPS = 50
+MIN_QUANT_BPS = 10
+MAX_QUANT_BPS = 500
 
 MIN_CORE_ENABLED = 3
 TIER_B_SANITY_BPS = 500
@@ -62,7 +73,7 @@ ERR_LLM = "[LLM_ERROR]"
 
 CONF_RANK = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
 
-# Seeded at deploy, immutable thereafter.
+# Seeded at deploy, immutable after.
 # (id, url_template, kind, extract, needs_slug, enabled)
 SEED_SOURCES = [
     ("binance", "https://api.binance.com/api/v3/ticker/price?symbol={BASE}{QALIAS}", "json", "price", "", True),
@@ -83,8 +94,8 @@ SEED_SLUGS = [
 ]
 
 
-# --- pure helpers: no storage, no gl.*; leader and validator share these
-# --- byte-for-byte so both run an identical task definition
+# --- pure helpers: no storage, no gl.*. Leader and validator share these
+# byte-for-byte, so both run an identical task definition
 
 def _sub(t: str, token: str, val: str) -> str:
     """Template substitution. The stdlib string-substitution method is rejected
@@ -120,8 +131,8 @@ def _to_atto(raw: typing.Any) -> int:
     if isinstance(raw, bool):
         raise ValueError("bool")
     if isinstance(raw, float):
-        # repr() gives the shortest round-tripping decimal, so 1882.12 stays
-        # 1882.12 instead of 1882.119999999999890861. Tiny prices come back in
+        # repr() gives the shortest round-tripping decimal: 1882.12 stays
+        # 1882.12, not 1882.119999999999890861. Tiny prices come back in
         # scientific notation, which only fixed notation can express.
         s = repr(raw)
         if "e" in s or "E" in s:
@@ -182,16 +193,49 @@ def _median(vals: list) -> int:
 
 
 def _bps(a: int, b: int) -> int:
-    """|a - b| in basis points of b. Multiplies before dividing deliberately:
-    dividing first truncates to 0 for any move under 100%. Bounded and safe -
-    prices cap at 1e30, so the product caps at 1e34 vs a u256 ceiling of 1.15e77.
-    """
+    """|a - b| in bps of b. Multiplies before dividing deliberately: dividing
+    first truncates to 0 for any move under 100%. Safe - prices cap at 1e30, so
+    the product caps at 1e34 against a u256 ceiling of 1.15e77."""
     if b <= 0:
         return 10**9
     d = a - b
     if d < 0:
         d = -d
     return (d * BPS) // b
+
+
+def _anchor(p: int) -> int:
+    """Largest c * 10**d <= p for c in (1, 2, 5). Stepping off this ladder
+    rather than off p keeps the step identical on nodes holding slightly
+    different numbers, and the bucket proportional (DESIGN.md 3.6)."""
+    u = 1
+    while u * 10 <= p:
+        u = u * 10
+    if u * 5 <= p:
+        return u * 5
+    if u * 2 <= p:
+        return u * 2
+    return u
+
+
+def _bucket(p: int, qbps: int) -> tuple:
+    """THE unit of consensus: nodes agree by landing in the SAME bucket, never
+    by being near each other."""
+    if p <= 0:
+        return (1, 0)
+    s = (_anchor(p) * qbps) // BPS
+    if s < 1:
+        s = 1
+    return (s, p // s)
+
+
+def _quantize(p: int, qbps: int) -> int:
+    """Bucket midpoint: a function of the bucket alone, so identical on every
+    node that agreed. This is what gets stored."""
+    if p <= 0:
+        return 0
+    s, i = _bucket(p, qbps)
+    return i * s + s // 2
 
 
 def _confidence(vals: list, med: int) -> str:
@@ -222,9 +266,12 @@ def _spread(vals: list, med: int) -> int:
     return hi
 
 
-def _agrees(lead: typing.Any, val: typing.Any, tol_bps: int, min_n: int) -> bool:
+def _agrees(lead: typing.Any, val: typing.Any, tol_bps: int, min_n: int,
+            qbps: int) -> bool:
     """THE consensus rule. Pure so it is unit testable - direct mode never runs
-    validator_fn."""
+    validator_fn. Both gates that decide a stored value are exact equality on a
+    quantized quantity, never a tolerance, and request_price recomputes what it
+    stores from exactly these - so every output this can accept is identical."""
     if not isinstance(lead, dict) or not isinstance(val, dict):
         return False
     try:
@@ -238,17 +285,21 @@ def _agrees(lead: typing.Any, val: typing.Any, tol_bps: int, min_n: int) -> bool
         return False
     if ln < min_n or vn < min_n:
         return False
-    # gate 1 - medians within tolerance
+    # gate 1 - BINDING. Same bucket, not "close enough": the stored price is the
+    # bucket midpoint, so agreeing here is agreeing on the exact number stored.
+    if _bucket(lm, qbps) != _bucket(vm, qbps):
+        return False
+    # gate 2 - raw tolerance still applies, so a widened lattice can never widen
+    # consensus past tolerance_bps
     if _bps(vm, lm) > tol_bps:
         return False
-    # gate 2 - a leader claiming a cleaner world than the validator independently
-    # observed is the manipulation signal a pure median check misses
-    lr = CONF_RANK.get(str(lead.get("confidence", "LOW")), 0)
-    vr = CONF_RANK.get(str(val.get("confidence", "LOW")), 0)
-    d = lr - vr
-    if d < 0:
-        d = -d
-    return d <= 1
+    # gate 3 - BINDING. Exact, not within a rank: to a consumer gating on it, an
+    # adjacent level is a different answer to "may I act on this?"
+    lc = str(lead.get("confidence", ""))
+    vc = str(val.get("confidence", ""))
+    if lc not in CONF_RANK or vc not in CONF_RANK:
+        return False
+    return lc == vc
 
 
 def _sanitize(s: str) -> str:
@@ -355,7 +406,7 @@ def _fetch_page(task: dict) -> int:
     return v
 
 
-def _collect(tasks: list, min_n: int) -> dict:
+def _collect(tasks: list, min_n: int, qbps: int) -> dict:
     """Fetch all sources, isolated per source, derive the result."""
     ok = {}
     failed = {}
@@ -387,16 +438,21 @@ def _collect(tasks: list, min_n: int) -> dict:
         raise gl.vm.UserError(ERR_TRANSIENT + " only " + str(len(ok)) + "/"
                               + str(len(tasks)) + " sources responded")
 
-    vals = list(ok.values())
+    # Snap every source onto the lattice FIRST, then derive: the median becomes
+    # a majority vote over lattice points rather than an average of jitter, and
+    # agrees across nodes far more often than quantizing the raw median would.
+    vals = []
+    prices = {}
+    for k in ok:
+        q = _quantize(ok[k], qbps)
+        vals.append(q)
+        prices[k] = str(q)
+
     med = _median(vals)
     conf = _confidence(vals, med)
     if anchor == 0:
         # page-only result, never cross-checked against a deterministic source
         conf = "LOW"
-
-    prices = {}
-    for k in ok:
-        prices[k] = str(ok[k])
 
     return {
         "median": str(med),
@@ -408,12 +464,13 @@ def _collect(tasks: list, min_n: int) -> dict:
     }
 
 
-def _handle_leader_error(res: typing.Any, tasks: list, min_n: int) -> bool:
+def _handle_leader_error(res: typing.Any, tasks: list, min_n: int,
+                         qbps: int) -> bool:
     lmsg = getattr(res, "message", "")
     if not isinstance(lmsg, str):
         lmsg = str(lmsg)
     try:
-        _collect(tasks, min_n)
+        _collect(tasks, min_n, qbps)
         return False  # leader failed where we succeeded - disagree, force rotation
     except gl.vm.UserError as e:
         vmsg = getattr(e, "message", "")
@@ -446,6 +503,7 @@ class PriceRecord:
     submitter: Address
     source_data: str
     seq: u256
+    quant_bps: u32
 
 
 @allow_storage
@@ -498,6 +556,7 @@ class ConsensusPrice(gl.Contract):
     min_sources: u32
     min_request_interval: u256
     max_history: u32
+    quant_bps: u32
 
     feeds: TreeMap[str, PriceFeed]
     pairs: DynArray[str]
@@ -522,6 +581,7 @@ class ConsensusPrice(gl.Contract):
         self.min_sources = u32(DEF_MIN_SOURCES)
         self.min_request_interval = u256(DEF_MIN_INTERVAL)
         self.max_history = u32(DEF_MAX_HISTORY)
+        self.quant_bps = u32(DEF_QUANT_BPS)
         self.total_requests = u256(0)
         self.total_fees_wei = u256(0)
 
@@ -535,8 +595,8 @@ class ConsensusPrice(gl.Contract):
 
     def _new_source(self, sid: str, tpl: str, kind: str, extract: str,
                     slug: str, core: bool, enabled: bool) -> None:
-        """Storage dataclasses are allocated by the collection, never
-        constructed in Python - the same rule DynArray enforces."""
+        """Storage dataclasses are allocated by the collection, never built in
+        Python - the same rule DynArray enforces."""
         self.source_idx[sid] = u32(len(self.sources))
         s = self.sources.append_new_get()
         s.source_id = sid
@@ -639,6 +699,8 @@ class ConsensusPrice(gl.Contract):
             srcs = json.loads(rec.source_data)
         except ValueError:
             srcs = {}
+        qb = int(rec.quant_bps)
+        step, idx = _bucket(int(rec.price), qb) if qb > 0 else (0, 0)
         return {
             "found": True,
             "pair": str(rec.pair),
@@ -656,6 +718,9 @@ class ConsensusPrice(gl.Contract):
             "submitter": rec.submitter.as_hex,
             "sources": srcs,
             "price_id": str(rec.pair) + ":" + str(int(rec.seq)),
+            # the consensus bucket this price IS - same bucket, same price
+            "quant_bps": qb,
+            "bucket": str(idx) + "@" + str(step),
         }
 
     # --- the oracle ---
@@ -683,27 +748,31 @@ class ConsensusPrice(gl.Contract):
             raise gl.vm.UserError(ERR_EXPECTED + " only " + str(len(tasks))
                                   + " sources cover " + p)
         tol = int(self.tolerance_bps)
+        # read pre-nondet so leader, validators and the block below share it
+        qb = int(self.quant_bps)
 
         def leader_fn():
-            return _collect(tasks, min_n)
+            return _collect(tasks, min_n, qb)
 
         def validator_fn(leaders_res: gl.vm.Result) -> bool:
             if not isinstance(leaders_res, gl.vm.Return):
-                return _handle_leader_error(leaders_res, tasks, min_n)
+                return _handle_leader_error(leaders_res, tasks, min_n, qb)
             try:
-                mine = _collect(tasks, min_n)
+                mine = _collect(tasks, min_n, qb)
             except gl.vm.UserError:
                 # could not do the leader's job - disagree, force rotation
                 return False
             except Exception:
                 return False
-            return _agrees(leaders_res.calldata, mine, tol, min_n)
+            return _agrees(leaders_res.calldata, mine, tol, min_n, qb)
 
         out = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
 
-        # post-consensus. THE only place a price is written, and med comes from
-        # consensus - not from any caller or owner.
-        med = int(out["median"])
+        # post-consensus. THE only place a price is written, and med is
+        # re-derived from the bucket, so the leader's bucket survives but its raw
+        # number does not: validators proved their own median falls in that same
+        # bucket, and _quantize is constant across a bucket.
+        med = _quantize(int(out["median"]), qb)
         conf = str(out["confidence"])
         n_ok = int(out["n"])
         spread = int(out["spread_bps"])
@@ -751,6 +820,7 @@ class ConsensusPrice(gl.Contract):
         rec.submitter = gl.message.sender_address
         rec.source_data = json.dumps(prices)
         rec.seq = u256(seq)
+        rec.quant_bps = u32(qb)
         feed.cursor = u32((int(feed.cursor) + 1) % mh)
         feed.update_count = u256(seq)
         feed.last_updated = u256(now)
@@ -919,6 +989,7 @@ class ConsensusPrice(gl.Contract):
             "min_sources": int(self.min_sources),
             "min_request_interval": int(self.min_request_interval),
             "max_history": int(self.max_history),
+            "quant_bps": int(self.quant_bps),
             "enabled_core": core,
             "enabled_non_core": non,
             "min_core_enabled": MIN_CORE_ENABLED,
@@ -1037,6 +1108,19 @@ class ConsensusPrice(gl.Contract):
         self.min_request_interval = u256(i)
         self.max_history = u32(h)
         self._log("set_params", str(t) + "/" + str(v) + "/" + str(s) + "/" + str(m))
+
+    @gl.public.write
+    def set_quant_bps(self, quant_bps: int) -> None:
+        """Lattice width in bps of the scale anchor. Narrower buys precision at
+        the cost of nodes straddling a bucket edge. Cannot loosen consensus past
+        tolerance_bps, and reaches only the NEXT request's lattice."""
+        self._only_owner()
+        q = int(quant_bps)
+        if q < MIN_QUANT_BPS or q > MAX_QUANT_BPS:
+            raise gl.vm.UserError(ERR_EXPECTED + " quant_bps " + str(MIN_QUANT_BPS)
+                                  + ".." + str(MAX_QUANT_BPS))
+        self.quant_bps = u32(q)
+        self._log("set_quant_bps", str(q))
 
     @gl.public.write
     def set_fee(self, fee_wei: int) -> None:

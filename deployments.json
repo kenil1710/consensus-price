@@ -1,100 +1,162 @@
 {
+  "consensus_binding": {
+    "summary": "Validators bind the stored price by exact quantization-bucket equality and the stored confidence by exact match. The stored price is the bucket midpoint, derived from the bucket rather than from the leader's raw median, so two accepted outputs for one request cannot differ.",
+    "quant_bps": 50,
+    "bucket_notation": "idx@step_atto - the price is the midpoint of [idx*step, (idx+1)*step)",
+    "supersedes": {
+      "studionet": "0x6dc688b2F104FB124B2a3bd17F7374b68dF06C53",
+      "testnet-bradbury": "0xF6d254596B58B8c3898e33FA871ee17f68e94fB2",
+      "reason": "prior build accepted validator medians within +/-200 bps and confidence within one rank, then stored the leader's exact values"
+    }
+  },
   "studionet": {
     "chainId": "61999",
     "rpc": "https://studio.genlayer.com/api",
     "ConsensusPrice": {
-      "address": "0x6dc688b2F104FB124B2a3bd17F7374b68dF06C53",
-      "deploy_tx": "0x98bc9e796b737ce247ed92e4066192541c6c66dca0e8b3ea58ab191e9a32aca4",
+      "address": "0x425beaf77B7CEB944D6F0fE9e5fcf08ff9B00171",
+      "deploy_tx": "0x8eea4be695eb823e048a2f790e31a7fdc9ce943bc300f253cf012535d1446c4c",
       "owner": "0xC70FF4C06aEcb796ED712029EE548834764c9Fe8",
-      "fee_wei": 0
+      "fee_wei": 0,
+      "quant_bps": 50,
+      "min_request_interval": 0
     },
     "PriceConsumer": {
-      "address": "0x4dfBA3605eA958Cea3b5c67ED8Ff6BaAE75aD29A",
-      "deploy_tx": "0xb8803dbd439bcd9064674f975d504a242df76bf92fb3e65a7f2b6ad0bc031747",
-      "oracle": "0x6dc688b2F104FB124B2a3bd17F7374b68dF06C53",
+      "address": "0x41F6dc7dF7599aA4a0346fFD0a3cF21e232143a9",
+      "deploy_tx": "0x2c98a654ec79ac42b12fbeba2744ca284922325587ddec98269b0015e94ab3a7",
+      "oracle": "0x425beaf77B7CEB944D6F0fE9e5fcf08ff9B00171",
       "max_age_seconds": 900,
       "min_confidence": "MEDIUM"
     },
-    "live_requests": [
-      {
-        "pair": "ETH/USD",
-        "tx": "0x436058e942f513fce5b6ba146edad21ffaf6c8b0407e99751e7589e9df880ca7",
-        "price_atto": "1877393480456408800000",
-        "price_usd": 1877.3934804564088,
-        "confidence": "HIGH",
-        "n_sources": 6,
-        "n_attempted": 7,
-        "spread_bps": 9,
-        "seconds_to_consensus": 39,
-        "failed_source": "binance: [EXTERNAL] http 451 (geo-blocked)"
-      },
-      {
-        "pair": "BTC/USD",
-        "tx": "0x30abf0df5a93929b3b2bced2e98fa450793affbf0accdb5e649885d6f4b3e162",
-        "price_atto": "62954975481879330000000",
-        "price_usd": 62954.97548187933,
-        "confidence": "HIGH",
-        "n_sources": 6,
-        "n_attempted": 7,
-        "spread_bps": 9,
-        "seconds_to_consensus": 32,
-        "failed_source": "binance: [EXTERNAL] http 451 (geo-blocked)"
+    "determinism_check": {
+      "method": "three consecutive request_price(\"ETH/USD\") rounds, rate limit set to 0",
+      "verdict": "identical price, bucket and confidence across all three independent consensus rounds",
+      "live_requests": [
+        {
+          "seq": 1,
+          "timestamp": 1786941916,
+          "price_atto": "1902500000000000000000",
+          "price_usd": 1902.5,
+          "bucket": "380@5000000000000000000",
+          "confidence": "HIGH",
+          "n_sources": 6,
+          "n_attempted": 7,
+          "spread_bps": 0,
+          "deviation_bps": 0
+        },
+        {
+          "seq": 2,
+          "timestamp": 1786941996,
+          "price_atto": "1902500000000000000000",
+          "price_usd": 1902.5,
+          "bucket": "380@5000000000000000000",
+          "confidence": "HIGH",
+          "n_sources": 6,
+          "spread_bps": 0,
+          "deviation_bps": 0
+        },
+        {
+          "seq": 3,
+          "tx": "0xbe8778137adc2a965337a1a262df972e4853d9668ab3261d9a8aa7b5bfc21c7b",
+          "timestamp": 1786942052,
+          "price_atto": "1902500000000000000000",
+          "price_usd": 1902.5,
+          "bucket": "380@5000000000000000000",
+          "confidence": "HIGH",
+          "n_sources": 5,
+          "spread_bps": 0,
+          "deviation_bps": 0,
+          "note": "one fewer source than rounds 1-2 and still the identical stored value"
+        }
+      ],
+      "consumer_read": {
+        "call": "quote(\"ETH/USD\", 2.5e18)",
+        "price": "1902500000000000000000",
+        "value_usd_atto": "4756250000000000000000",
+        "confidence": "HIGH"
       }
-    ]
+    }
   },
   "testnet-bradbury": {
-    "explorer": "https://explorer.genlayer.com",
+    "explorer": "https://explorer-bradbury.genlayer.com",
     "ConsensusPrice": {
-      "address": "0xF6d254596B58B8c3898e33FA871ee17f68e94fB2",
-      "deploy_tx": "0x747f6b9c8186ef2a3177ed1b50e7a4a57f34be1f3c1a87a5d734dfcd3b23b2a9",
+      "address": "0x0f1dC3655d5312D1E63264e7e679524D756C1797",
+      "deploy_tx": "0x90f6452b5cddbb83786be509f14a59024ee353a5d631541783aaad4ddb223f09",
       "owner": "0xC70FF4C06aEcb796ED712029EE548834764c9Fe8",
-      "fee_wei": 0
+      "fee_wei": 0,
+      "quant_bps": 50,
+      "min_request_interval": 0
     },
     "PriceConsumer": {
-      "address": "0x68c97558e71A8E574d7E52018115312A696146FC",
-      "deploy_tx": "0x4bae2664f91b9dd6bf9d2cee1a4b5ea1352f5b3821ff87edb760ccb30fecea44",
-      "oracle": "0xF6d254596B58B8c3898e33FA871ee17f68e94fB2",
+      "address": "0x59CC24eb6Bb167d0bFbD9984E67dd273285472a8",
+      "deploy_tx": "0x4449b9b6fd72c4d3ce507512303c433d241afa84927ef6afaeeab5449b0d67ec",
+      "oracle": "0x0f1dC3655d5312D1E63264e7e679524D756C1797",
       "max_age_seconds": 900,
       "min_confidence": "MEDIUM"
     },
-    "cli_note": "request_price REQUIRES --fee-value on Bradbury (0.1 GEN used). Without it the consensus contract reverts the EVM tx in ~3s with value 0x0. Cheap deterministic writes such as set_fee succeed without it.",
-    "live_requests": [
-      {
-        "pair": "ETH/USD",
-        "seq": 1,
-        "tx": "0xd1b021abc097bece9f52c323121dfe20e77b10e805a7b125389e5a796fbad173",
-        "price_atto": "1877599524608443050000",
-        "price_usd": 1877.5995246084431,
-        "timestamp": 1786789721,
-        "confidence": "HIGH",
-        "n_sources": 6,
-        "n_attempted": 7,
-        "spread_bps": 9,
-        "seconds_to_consensus": 56,
-        "failed_source": "yahoo: ungrounded (grounding check rejected the extracted number)"
+    "cli_note": "request_price REQUIRES --fee-value on Bradbury (0.2 GEN used here). CLI 0.39.2 has no --gas flag; --fee-value is the fee deposit. Leader timeouts are common on this network and simply need a retry - they are not consensus failures.",
+    "determinism_check": {
+      "method": "four request_price(\"ETH/USD\") rounds, rate limit set to 0",
+      "verdict": "seq 3 and seq 4 ran 46s apart and are byte-identical. seq 1 -> seq 2 sat 823s apart (leader timeouts forced retries) and moved exactly one bucket, which is the market moving 26 bps, not consensus drifting.",
+      "live_requests": [
+        {
+          "seq": 1,
+          "timestamp": 1786942673,
+          "price_atto": "1902500000000000000000",
+          "price_usd": 1902.5,
+          "bucket": "380@5000000000000000000",
+          "confidence": "HIGH",
+          "n_sources": 6,
+          "n_attempted": 7,
+          "spread_bps": 0,
+          "validator_votes": "4 AGREE, 1 TIMEOUT"
+        },
+        {
+          "seq": 2,
+          "timestamp": 1786943496,
+          "price_atto": "1897500000000000000000",
+          "price_usd": 1897.5,
+          "bucket": "379@5000000000000000000",
+          "confidence": "HIGH",
+          "n_sources": 6,
+          "spread_bps": 26,
+          "deviation_bps": 26,
+          "note": "823s after seq 1; one bucket down as ETH moved"
+        },
+        {
+          "seq": 3,
+          "timestamp": 1786943719,
+          "price_atto": "1902500000000000000000",
+          "price_usd": 1902.5,
+          "bucket": "380@5000000000000000000",
+          "confidence": "HIGH",
+          "spread_bps": 26,
+          "deviation_bps": 26,
+          "validator_votes": "5 AGREE"
+        },
+        {
+          "seq": 4,
+          "timestamp": 1786943765,
+          "price_atto": "1902500000000000000000",
+          "price_usd": 1902.5,
+          "bucket": "380@5000000000000000000",
+          "confidence": "HIGH",
+          "spread_bps": 13,
+          "deviation_bps": 0,
+          "note": "46s after seq 3, byte-identical storage despite a different source spread",
+          "validator_votes": "3 AGREE, 1 TIMEOUT, 1 DETERMINISTIC_VIOLATION"
+        }
+      ],
+      "twap_after_4_records": {
+        "twap_atto": "1901776913099870298313",
+        "samples": 4,
+        "window_seconds": 1542
       },
-      {
-        "pair": "ETH/USD",
-        "seq": 2,
-        "price_atto": "1879285000000000000000",
-        "price_usd": 1879.285,
-        "timestamp": 1786791368,
+      "consumer_read": {
+        "call": "quote(\"ETH/USD\", 2.5e18)",
+        "price": "1902500000000000000000",
+        "value_usd_atto": "4756250000000000000000",
         "confidence": "HIGH"
-      },
-      {
-        "pair": "ETH/USD",
-        "seq": 3,
-        "price_atto": "1878505000000000000000",
-        "price_usd": 1878.505,
-        "timestamp": 1786794348,
-        "confidence": "HIGH",
-        "seconds_to_consensus": 409
       }
-    ],
-    "twap_after_3_records": {
-      "twap_atto": "1878668638190945924837",
-      "samples": 3,
-      "window_seconds": 5091
     }
   }
 }

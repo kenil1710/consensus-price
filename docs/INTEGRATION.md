@@ -123,7 +123,7 @@ price_8dp = oracle.view().get_price_scaled("ETH/USD", 8)   # Chainlink-style
 will not change.
 
 ```
-1877393480456408800000  ==  $1,877.393480456408800
+1902500000000000000000  ==  $1,902.50
 ```
 
 Convert by dividing by `10 ** 18`. Do this at the display boundary only — keep integer math
@@ -142,8 +142,10 @@ no float anywhere in this path, and there should not be one in yours.
 
 ## 5. Confidence semantics
 
-Computed independently by each node from its own source set, then required to agree across
-consensus within one level.
+Computed independently by each node from its own source set, then required to match
+**exactly** across consensus. An accepted round cannot have one node saying `HIGH` and
+another `MEDIUM`, so a `min_confidence` gate you set can never be straddled by two outputs
+the oracle would both have accepted.
 
 | Value | Meaning |
 |---|---|
@@ -154,9 +156,39 @@ consensus within one level.
 `LOW` is not "probably fine." It means the sources materially disagreed, and you should
 treat it as a signal that something is happening in the market or in the source set.
 
-`spread_bps` on every record gives the raw number behind the label: the widest deviation
-from the median, in basis points. The live ETH/USD record above reads `9` — nine
-hundredths of a percent across six venues.
+`spread_bps` on every record gives the number behind the label: the widest deviation from the
+median, in basis points, measured over quantized source prices (see §5b). It reads `0` when
+every source landed in the same bucket, which is the common case for a liquid pair.
+
+---
+
+## 5b. Prices are quantized — what that means for you
+
+**The stored price is a bucket midpoint, not a raw median.** Every price snaps onto a lattice
+before consensus, validators agree by landing in the *same* bucket, and the stored value is
+derived from the bucket. This is what makes the number binding: two outputs the oracle would
+both accept for one request cannot differ, so a second request cannot re-quote you on noise.
+
+Two fields on every record expose it:
+
+| Field | Example | Meaning |
+|---|---|---|
+| `quant_bps` | `50` | Lattice width, in bps of the price's scale anchor |
+| `bucket` | `"380@5000000000000000000"` | `idx@step` — the price is the midpoint of `[idx*step, (idx+1)*step)` |
+
+What this changes for an integrator:
+
+- **Resolution.** At `quant_bps = 50` a bucket is 20–50 bps wide — about `$5` at ETH ≈
+  `$1,900`. The stored price can sit up to half a bucket (≈13 bps) from the median that
+  produced it. If your product needs finer resolution than that, this oracle is not the right
+  input; do not paper over it with your own interpolation.
+- **Stability is a feature.** Two requests inside one bucket return the identical `u256`, so
+  quotes derived from it are stable across refreshes. Compare `bucket` between two reads to
+  see whether the market actually moved or you simply re-read the same consensus.
+- **Do not re-quantize.** The value you read is already on the lattice. Rounding it again
+  only adds error.
+- **`get_twap` is not on the lattice**, by design — it is a time-weighted average of
+  lattice points, so it lands between them.
 
 ---
 
@@ -224,8 +256,8 @@ directly. It is live on both networks:
 
 | Network | PriceConsumer | reading oracle |
 |---|---|---|
-| Bradbury | `0x68c97558e71A8E574d7E52018115312A696146FC` | `0xF6d254596B58B8c3898e33FA871ee17f68e94fB2` |
-| Studionet | `0x4dfBA3605eA958Cea3b5c67ED8Ff6BaAE75aD29A` | `0x6dc688b2F104FB124B2a3bd17F7374b68dF06C53` |
+| Bradbury | `0x59CC24eb6Bb167d0bFbD9984E67dd273285472a8` | `0x0f1dC3655d5312D1E63264e7e679524D756C1797` |
+| Studionet | `0x41F6dc7dF7599aA4a0346fFD0a3cF21e232143a9` | `0x425beaf77B7CEB944D6F0fE9e5fcf08ff9B00171` |
 
 It demonstrates both integration styles side by side:
 
@@ -237,7 +269,7 @@ It demonstrates both integration styles side by side:
 Verified live, against real prices:
 
 ```
-$ genlayer call 0x4dfBA...D29A quote --args "ETH/USD" 2500000000000000000
+$ genlayer call 0x41F6d...43a9 quote --args "ETH/USD" 2500000000000000000
 {
   pair: 'ETH/USD',
   amount_atto:    '2500000000000000000',   # 2.5 ETH
@@ -247,10 +279,10 @@ $ genlayer call 0x4dfBA...D29A quote --args "ETH/USD" 2500000000000000000
   age_seconds: 239
 }
 
-$ genlayer call 0x4dfBA...D29A quote --args "BTC/USD" 1000000000000000000
+$ genlayer call 0x41F6d...43a9 quote --args "BTC/USD" 1000000000000000000
 execution failed          # no price stored for BTC/USD at the time — correctly refused
 
-$ genlayer call 0x4dfBA...D29A is_safe_to_trade --args "BTC/USD"
+$ genlayer call 0x41F6d...43a9 is_safe_to_trade --args "BTC/USD"
 { safe: false, reason: 'no price for BTC/USD' }
 ```
 

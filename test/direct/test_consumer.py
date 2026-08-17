@@ -10,7 +10,7 @@ genuine CallContract path rather than a plain Python method call.
 import pytest
 
 from conftest import (CONSUMER, CONTRACT, FEE, allow_another_contract,
-                      mock_all, mock_page, mock_tier_a)
+                      mock_all, mock_page, mock_tier_a, quantized)
 
 SCALE = 10**18
 ORACLE_ADDR = "0x" + "ab" * 20
@@ -117,10 +117,12 @@ def test_consumer_reads_price_across_contracts(stack, direct_alice):
 
     out = stack.consumer.quote("ETH/USD", 3 * SCALE)
     assert out["pair"] == "ETH/USD"
-    # 3 ETH at ~$2000 = ~$6000, carried at 18 decimals
-    assert abs(out["value_usd_atto"] - 6000 * SCALE) < 5 * SCALE
+    # 3 ETH at ~$2000 = ~$6000, carried at 18 decimals. The consumer prices off
+    # the oracle's quantized value, so this is exact rather than approximate.
+    assert out["price"] == quantized(2000.0)
+    assert out["value_usd_atto"] == 3 * quantized(2000.0)
+    assert abs(out["value_usd_atto"] - 6000 * SCALE) < 20 * SCALE
     assert out["confidence"] in ("HIGH", "MEDIUM")
-    assert out["price"] > 0
 
 
 def test_consumer_config_points_at_the_oracle(stack):
@@ -165,7 +167,7 @@ def test_graceful_degradation_reports_a_reason(stack, direct_alice):
     stack.post(direct_alice, price=2000.0)
     out = stack.consumer.is_safe_to_trade("ETH/USD")
     assert out["safe"] is True
-    assert abs(out["price"] - 2000 * SCALE) < 5 * SCALE
+    assert out["price"] == quantized(2000.0)
 
 
 def test_graceful_degradation_flags_volatility(stack, direct_alice):
@@ -206,7 +208,7 @@ def test_consumer_write_path_settles_against_the_oracle(stack, direct_alice):
     stack.vm.sender = direct_alice
 
     value = stack.consumer.record_quote("ETH/USD", 2 * SCALE)
-    assert abs(value - 4000 * SCALE) < 5 * SCALE
+    assert value == 2 * quantized(2000.0)
     cfg = stack.consumer.get_config()
     assert cfg["quote_count"] == 1
     assert cfg["last_value_atto"] == value
