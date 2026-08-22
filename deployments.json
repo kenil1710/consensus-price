@@ -140,7 +140,9 @@
       "owner": "0xC70FF4C06aEcb796ED712029EE548834764c9Fe8",
       "fee_wei": 0,
       "quant_bps": 50,
-      "min_request_interval": 0
+      "min_request_interval": 0,
+      "max_history": 3,
+      "max_history_note": "LIVE VALUE IS 3, left over from the ring-capacity check, not the intended 24. It affects only feeds created from now on - a pair first requested on this deployment gets a 3-deep ring instead of 24. Two set_params transactions to restore it (0xf0af5ce8... to 64 during the check, then 0x4e50c7b9... to 24) both timed out waiting for ACCEPTED while Bradbury was congested; at the time of writing even `genlayer receipt` on those hashes times out. Existing feeds are unaffected either way - that is precisely the property this fix guarantees. Studionet is correctly at 24."
     },
     "PriceConsumer": {
       "address": "0xC20700C3021bd620f076967a04d916dBfB8F05cf",

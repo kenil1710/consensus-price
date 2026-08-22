@@ -33,6 +33,13 @@ outputs for one request cannot differ. See [Consensus](#3-consensus).
 
 Full transaction hashes in [`deployments.json`](deployments.json).
 
+> Bradbury note: `max_history` on that deployment currently reads `3` rather than `24`, left
+> over from the ring-capacity check — two transactions to restore it timed out while the
+> network was congested. It affects only pairs first requested from now on, which get a
+> 3-deep history ring; existing feeds keep the capacity they were born with, which is exactly
+> the property this fix guarantees. Studionet is at `24`. Check either with
+> `get_config` / `get_feed_info`.
+
 **Reviewers: [start here](#testing-this-contract).** There is no frontend — this is an
 Intelligent Contracts submission, and the contract itself is the deliverable. Every method
 below can be called in the browser with no wallet and no install.
