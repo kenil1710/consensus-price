@@ -256,8 +256,8 @@ directly. It is live on both networks:
 
 | Network | PriceConsumer | reading oracle |
 |---|---|---|
-| Bradbury | `0xa67e231e29623ceeacd03A7314C273b0101F1490` | `0xa7a96AF9A750F7465321980182E67bAd7E668A79` |
-| Studionet | `0xcFdF91ac7e28d3E4Aa384f0cDcd4b1f715130d1B` | `0x39C4f40ACe9A868F8158909CdCd03281388AeC10` |
+| Bradbury | `0xa67e231e29623ceeacd03A7314C273b0101F1490` | `0x8c2Dd5E8B305F6B9659F058Ac86095bbc9733146` |
+| Studionet | `0x3bAb00032b29Db9E14f12a3D975F6D4Add77F8F9` | `0xEB6FA760Ff86E50ef9089ed194d919ad0A155Fe0` |
 
 It demonstrates both integration styles side by side:
 

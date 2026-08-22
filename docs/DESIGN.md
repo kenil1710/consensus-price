@@ -37,7 +37,7 @@ TOLERANCE_BPS        = 200          # leader vs validator median, 2% - upper bou
 QUANT_BPS            = 50           # consensus lattice width, 10..500 (§3.6)
 VOLATILITY_BPS       = 1000         # vs previous record -> HIGH_VOLATILITY flag, 10%
 STALENESS_SECONDS    = 900          # 15 min
-MAX_HISTORY          = 24           # ring buffer depth per pair
+DEF_MAX_HISTORY      = 24           # ring depth handed to a NEW pair's feed (5.2.1)
 MIN_REQUEST_INTERVAL = 60           # anti-spam, seconds
 TIER_B_SANITY_BPS    = 500          # page price >5% off Tier A median -> discarded
 PAGE_CHARS           = 4000         # LLM input truncation
@@ -76,6 +76,7 @@ class PriceFeed:
     cursor: u32
     update_count: u256
     last_updated: u256
+    capacity: u32                    # this feed's ring width, fixed at birth (5.2.1)
 
 @allow_storage
 @dataclass
@@ -141,7 +142,7 @@ class Contract(gl.Contract):
 | 2 | `add_source(source_id, url_template, kind, extract, needs_slug, weight)` | Upsert into registry |
 | 3 | `set_source_enabled(source_id, enabled)` | Kill a dead source without redeploy |
 | 4 | `set_pair_slugs(pair, slugs_json)` | Register CoinGecko/Coinpaprika ids for a pair |
-| 5 | `set_params(tolerance_bps, volatility_bps, staleness_seconds, min_sources, min_request_interval, max_history)` | Bounds-checked |
+| 5 | `set_params(tolerance_bps, volatility_bps, staleness_seconds, min_sources, min_request_interval, max_history)` | Bounds-checked. `max_history` sets the ring depth of **new** feeds only; a live feed keeps its birth capacity (§5.2.1) |
 | 6 | `set_quant_bps(quant_bps)` | Consensus lattice width, `10..500`. Capped by `tolerance_bps`; reaches only the next request (§3.6) |
 | 7 | `set_fee(fee_wei)` | |
 | 8 | `set_paused(paused)` | Circuit breaker |
@@ -157,6 +158,7 @@ class Contract(gl.Contract):
 | 12 | `get_price_history(pair, count)` | Last N records, newest first |
 | 13 | `get_twap(pair, count)` | Time-weighted average over last N |
 | 14 | `get_supported_pairs()` | All pairs ever requested |
+| 14b | `get_feed_info(pair)` | This feed's `capacity`, `records_stored`, `update_count`, and the `new_feed_capacity` a fresh feed would get (§5.2.1) |
 | 15 | `get_stats()` | total_requests, unique_pairs, total_fees_wei, feeds_count |
 | 16 | `get_sources()` | Registry + per-source ok/fail counts + last failure reason |
 | 17 | `decimals()` | `18` |
@@ -457,17 +459,56 @@ stays trivially forward-compatible when a source is added.
 
 ### 5.2 Ring buffer, not a shifting list
 
-`MAX_HISTORY = 24` per pair. Naive "append then pop(0)" is O(n) storage rewrites every update.
-Instead:
+`DEF_MAX_HISTORY = 24` per pair. Naive "append then pop(0)" is O(n) storage rewrites every
+update. Instead:
 
 ```
-if len(history) < max_history:  history.append(rec)
-else:                           history[cursor] = rec
-cursor = (cursor + 1) % max_history
+cap = _cap(feed)                       # the feed's own width, never the global
+if len(history) < cap:  history.append(rec)
+else:                   history[cursor] = rec
+cursor = (cursor + 1) % cap
 ```
 
 O(1) per update regardless of depth. `get_price_history` and `get_twap` read backwards from
 `cursor` to yield newest-first ordering.
+
+### 5.2.1 Capacity is per feed and immutable — one width for reads and writes
+
+Each `PriceFeed` carries its own `capacity`, seeded from `max_history` on the transaction that
+creates the feed and never assigned again. `_cap(feed)` is the single definition of "how wide
+is this ring", and the writer, `_latest`, `_ordered` and the `count <= 0` default in
+`get_price_history`/`get_twap` all call it.
+
+**Why, concretely.** Reads previously derived the width from `len(history)` while the writer
+derived it from the mutable global `self.max_history`. Any change to `max_history` under a feed
+that already held records split those two definitions apart, and both directions corrupted
+reads:
+
+| | before | after `set_params(..., max_history=X)` + more writes |
+|---|---|---|
+| **shrink** 10 → 5 | 10 records, seqs 1‑10 | writes land at `count % 5`; reads still walk all 10 slots. `get_latest_price` returns **seq 10** with seqs 11‑15 already written and unreachable |
+| **grow** 4 → 12 | 4 records, wrapped | writer appends past the ring while reads rotate around the cursor; history comes back **out of time order** (`3, 6, 5, 7, 4`) and seq 3 is named latest with seq 7 written |
+
+Both served stale or mis-ordered data to `get_price_checked` and `get_twap` — the two reads a
+consumer is most likely to price against. Fixing only the shrink direction (rejecting a smaller
+`max_history`) would have left the grow bug fully live.
+
+**What the knob does now.** `max_history` sets the depth of feeds created *after* the call. A
+live feed keeps the depth it was born with, forever. `get_feed_info(pair)` reports both numbers
+so the difference is observable on-chain rather than implied.
+
+**Why not migrate instead.** Compacting a live ring on resize means an owner-callable path that
+rewrites stored price records, which contradicts claim 1 of the trust model (§ contract header:
+no `set_price`, override, emergency write or migration hook exists). It is also unbounded work —
+`pairs` grows with every new pair ever requested, so an eager migration across all feeds could
+exceed the block gas limit and brick the parameter permanently. Fixing the width per feed costs
+one `u32` per pair, is O(1), and keeps the trust model literally true. The trade — an existing
+feed cannot be deepened without redeploying — is the price, and it is stated rather than hidden.
+
+Asserted in `test/direct/test_capacity.py`: both corruption scenarios, a sweep that resizes the
+global before every single write, and AST checks that `capacity`/`cursor` are assigned only on
+the `request_price` path, that no governance method reaches feed history at all, and that
+`self.max_history` is never read as a ring modulus.
 
 ### 5.3 O(1) indexes
 

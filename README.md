@@ -21,15 +21,15 @@ outputs for one request cannot differ. See [Consensus](#3-consensus).
 
 | Contract | Address |
 |---|---|
-| `ConsensusPrice` | `0xa7a96AF9A750F7465321980182E67bAd7E668A79` |
+| `ConsensusPrice` | `0x8c2Dd5E8B305F6B9659F058Ac86095bbc9733146` |
 | `PriceConsumer` | `0xa67e231e29623ceeacd03A7314C273b0101F1490` |
 
 **Studionet**
 
 | Contract | Address |
 |---|---|
-| `ConsensusPrice` | `0x39C4f40ACe9A868F8158909CdCd03281388AeC10` |
-| `PriceConsumer` | `0xcFdF91ac7e28d3E4Aa384f0cDcd4b1f715130d1B` |
+| `ConsensusPrice` | `0xEB6FA760Ff86E50ef9089ed194d919ad0A155Fe0` |
+| `PriceConsumer` | `0x3bAb00032b29Db9E14f12a3D975F6D4Add77F8F9` |
 
 Full transaction hashes in [`deployments.json`](deployments.json).
 
@@ -40,7 +40,7 @@ below can be called in the browser with no wallet and no install.
 Real result from a live request, not a mock:
 
 ```
-$ genlayer call 0x39C4f40ACe9A868F8158909CdCd03281388AeC10 get_latest_price --args "ETH/USD"
+$ genlayer call 0xEB6FA760Ff86E50ef9089ed194d919ad0A155Fe0 get_latest_price --args "ETH/USD"
 
 {
   pair: 'ETH/USD',
@@ -129,7 +129,7 @@ Two ways in. **Option A needs nothing installed and no wallet** — start there.
 **One-click import:**
 
 ```
-https://studio.genlayer.com/?import-contract=0x39C4f40ACe9A868F8158909CdCd03281388AeC10
+https://studio.genlayer.com/?import-contract=0xEB6FA760Ff86E50ef9089ed194d919ad0A155Fe0
 ```
 
 This loads the deployed Studionet instance: Studio fetches the on-chain source into the
@@ -154,7 +154,7 @@ explicit `--fee-value` deposit — see [Step 3](#step-3--request-a-fresh-price-n
 ### The Bradbury explorer
 
 ```
-https://explorer-bradbury.genlayer.com/address/0xa7a96AF9A750F7465321980182E67bAd7E668A79
+https://explorer-bradbury.genlayer.com/address/0x8c2Dd5E8B305F6B9659F058Ac86095bbc9733146
 ```
 
 Useful for **verifying** the deployment — it shows the on-chain source, the balance, and
@@ -167,14 +167,14 @@ CLI to actually call anything.
 The five steps below are written as CLI commands against Bradbury. **In Studio, run the
 same steps** by selecting the identical method name and arguments in the interaction panel —
 the contract is the same and the fee is zeroed on both deployments. Substitute the Studionet
-addresses (`0x39C4f40A…` oracle, `0xcFdF91ac…` consumer) if you are reading along there.
+addresses (`0xEB6FA760…` oracle, `0x3bAb0003…` consumer) if you are reading along there.
 
 ### Step 1 — Current state (no wallet)
 
 ```bash
-genlayer call 0xa7a96AF9A750F7465321980182E67bAd7E668A79 get_stats
-genlayer call 0xa7a96AF9A750F7465321980182E67bAd7E668A79 get_config
-genlayer call 0xa7a96AF9A750F7465321980182E67bAd7E668A79 decimals
+genlayer call 0x8c2Dd5E8B305F6B9659F058Ac86095bbc9733146 get_stats
+genlayer call 0x8c2Dd5E8B305F6B9659F058Ac86095bbc9733146 get_config
+genlayer call 0x8c2Dd5E8B305F6B9659F058Ac86095bbc9733146 decimals
 ```
 
 `get_stats` shows total requests and unique pairs. `get_config` shows every tunable plus
@@ -183,8 +183,8 @@ genlayer call 0xa7a96AF9A750F7465321980182E67bAd7E668A79 decimals
 Also worth calling, because it is the transparency claim made checkable:
 
 ```bash
-genlayer call 0xa7a96AF9A750F7465321980182E67bAd7E668A79 get_sources
-genlayer call 0xa7a96AF9A750F7465321980182E67bAd7E668A79 get_governance_log --args 20
+genlayer call 0x8c2Dd5E8B305F6B9659F058Ac86095bbc9733146 get_sources
+genlayer call 0x8c2Dd5E8B305F6B9659F058Ac86095bbc9733146 get_governance_log --args 20
 ```
 
 `get_sources` reports per-source `ok_count`, `fail_count`, `reliability_pct`, and the real
@@ -194,9 +194,9 @@ and timestamp.
 ### Step 2 — Existing price data (no wallet)
 
 ```bash
-genlayer call 0xa7a96AF9A750F7465321980182E67bAd7E668A79 get_latest_price --args "ETH/USD"
-genlayer call 0xa7a96AF9A750F7465321980182E67bAd7E668A79 get_price_history --args "ETH/USD" 5
-genlayer call 0xa7a96AF9A750F7465321980182E67bAd7E668A79 get_twap --args "ETH/USD" 5
+genlayer call 0x8c2Dd5E8B305F6B9659F058Ac86095bbc9733146 get_latest_price --args "ETH/USD"
+genlayer call 0x8c2Dd5E8B305F6B9659F058Ac86095bbc9733146 get_price_history --args "ETH/USD" 5
+genlayer call 0x8c2Dd5E8B305F6B9659F058Ac86095bbc9733146 get_twap --args "ETH/USD" 5
 ```
 
 Returns real prices from live requests, with the full per-source breakdown in `sources` and
@@ -227,7 +227,7 @@ Divide `price` by 10^18 for USD: `1897500000000000000000` is `$1,897.50`.
 ### Step 3 — Request a fresh price (needs an account)
 
 ```bash
-genlayer write 0xa7a96AF9A750F7465321980182E67bAd7E668A79 request_price \
+genlayer write 0x8c2Dd5E8B305F6B9659F058Ac86095bbc9733146 request_price \
   --args "ETH/USD" --fee-value 100000000000000000
 ```
 
@@ -254,7 +254,7 @@ Bradbury ranged from 56 seconds to 409 seconds depending on network load. Watch 
 `resultName: 'AGREE'`. Then:
 
 ```bash
-genlayer call 0xa7a96AF9A750F7465321980182E67bAd7E668A79 get_latest_price --args "ETH/USD"
+genlayer call 0x8c2Dd5E8B305F6B9659F058Ac86095bbc9733146 get_latest_price --args "ETH/USD"
 ```
 
 `timestamp` and `price_id` will have advanced, and `flags` will no longer read `FIRST`.
@@ -266,9 +266,9 @@ genlayer call 0xa7a96AF9A750F7465321980182E67bAd7E668A79 get_latest_price --args
 ### Step 4 — A different pair, zero configuration
 
 ```bash
-genlayer write 0xa7a96AF9A750F7465321980182E67bAd7E668A79 request_price \
+genlayer write 0x8c2Dd5E8B305F6B9659F058Ac86095bbc9733146 request_price \
   --args "BTC/USD" --fee-value 100000000000000000
-genlayer call  0xa7a96AF9A750F7465321980182E67bAd7E668A79 get_latest_price --args "BTC/USD"
+genlayer call  0x8c2Dd5E8B305F6B9659F058Ac86095bbc9733146 get_latest_price --args "BTC/USD"
 ```
 
 No setup was needed for BTC/USD, and none is needed for `SOL/USD`, `AVAX/USD`, or
@@ -311,7 +311,7 @@ the file in this repository, byte for byte:
 ```bash
 curl -s -X POST https://rpc-bradbury.genlayer.com -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"gen_getContractCode",
-       "params":[{"address":"0xa7a96AF9A750F7465321980182E67bAd7E668A79"}],"id":1}' \
+       "params":[{"address":"0x8c2Dd5E8B305F6B9659F058Ac86095bbc9733146"}],"id":1}' \
   | python3 -c "import json,sys,base64,hashlib; \
       print(hashlib.sha256(base64.b64decode(json.load(sys.stdin)['result'])).hexdigest())"
 
@@ -326,7 +326,7 @@ run the same 36,688 bytes.
 ```bash
 pip install genlayer-test[sim]
 genvm-lint check contracts/ConsensusPrice.py
-pytest test/direct -q          # 132 passed
+pytest test/direct -q          # 164 passed
 ```
 
 ---
@@ -394,7 +394,8 @@ retries, which is strictly better than storing a value two nodes never agreed on
 
 `_quantize(agreed_median)` — the bucket midpoint, not the leader's raw number — is written to
 a per-pair ring buffer with its sequence number, bucket id, flags, spread, deviation from the
-previous record, and the full per-source breakdown as JSON for transparency.
+previous record, and the full per-source breakdown as JSON for transparency. The ring's width
+is a property of the feed, not a global — see [Ring capacity](#ring-capacity-is-per-feed).
 
 **The invariant:** a request either stores a price that ≥3 independent sources and a
 majority of validators agreed on, or it stores nothing. There is no partial-credit path
@@ -417,6 +418,10 @@ The owner **cannot**:
    Owner-added sources structurally cannot decide a price.
 5. **Act invisibly.** Every governance call appends to `gov_log` with the caller address and
    timestamp, readable by anyone via `get_governance_log()`.
+6. **Resize a live feed's history.** Each feed fixes its ring capacity when it is created and
+   keeps it for life; `max_history` seeds new feeds only. No governance call can move which
+   record readers treat as latest, and there is no migration hook to rewrite one — which is
+   what keeps claim 1 literally true. See [Ring capacity](#ring-capacity-is-per-feed).
 
 The owner **can** enable/disable seeded sources within those bounds, add capped non-core
 sources, register slugs, tune parameters within hard-coded ranges, pause new requests, and
@@ -425,6 +430,47 @@ withdraw fees. Pausing cannot alter an already-stored price.
 **Honest limit:** influence is bounded, public, and requires its own transaction — not zero.
 At the floor of 3 core + 1 added source the owner still cannot determine the median (1 of 4
 is no majority) and still needs validators to agree.
+
+### Ring capacity is per feed
+
+Every `PriceFeed` carries its own `capacity`, seeded from `max_history` on the transaction
+that creates the feed and never assigned again. `_cap(feed)` is the one definition of how
+wide that ring is, and the writer, `get_latest_price`, `get_price_history` and `get_twap`
+all take their width from it.
+
+This was a reported bug, and it was real. Reads used to derive the width from the stored
+array length while the writer derived it from the mutable global `max_history`. Changing
+`max_history` under a feed that already held records split those two apart, in both
+directions:
+
+| Change | State before | What reads returned afterwards |
+|---|---|---|
+| Shrink 10 → 5 | 10 records, seqs 1–10 | Writes landed at `count % 5`; reads still walked all 10 slots. `get_latest_price` returned **seq 10** with seqs 11–15 already written and unreachable |
+| Grow 4 → 12 | 4 records, wrapped | Writer appended past the ring while reads rotated around the cursor. History came back **out of time order** (`3, 6, 5, 7, 4`) and seq 3 was named latest with seq 7 written |
+
+Both fed stale or mis-ordered records to `get_price_checked` and `get_twap` — the two reads
+a consumer is most likely to price against. Note the second row: rejecting only a *smaller*
+`max_history` would have left the grow bug fully live.
+
+**What `max_history` does now.** It sets the depth of feeds created after the call. A live
+feed keeps the depth it was born with. `get_feed_info(pair)` reports both numbers, so the
+difference is readable on-chain rather than implied:
+
+```bash
+genlayer call <ORACLE> get_feed_info --args "ETH/USD"
+# {"found": true, "capacity": 24, "records_stored": 24, "new_feed_capacity": 48, ...}
+```
+
+**Why not migrate a live ring instead.** Compacting on resize means an owner-callable path
+that rewrites stored price records, which contradicts claim 1 above. It is also unbounded
+work — `pairs` grows with every pair ever requested, so an eager migration across all feeds
+could exceed the block gas limit and brick the parameter permanently. Fixing the width per
+feed costs one `u32` per pair, stays O(1), and keeps the trust model literally true.
+
+**The trade, stated rather than hidden:** an existing feed cannot be deepened without
+deploying a new contract. Both corruption scenarios, a sweep that resizes the global before
+every single write, and AST checks that no governance method can reach feed history are in
+`test/direct/test_capacity.py`.
 
 ---
 
@@ -482,6 +528,7 @@ two aggregator sources join in once the owner registers a slug via `set_pair_slu
 | `get_twap(pair, count)` | Time-weighted average |
 | `get_price_scaled(pair, decimals)` | Median rescaled to your decimals |
 | `is_stale(pair)`, `decimals()` | Freshness and scale |
+| `get_feed_info(pair)` | This feed's ring `capacity`, records stored, update count |
 | `get_supported_pairs()`, `get_sources()`, `get_config()`, `get_stats()` | Introspection |
 | `get_governance_log(count)` | Every owner action, with address and timestamp |
 
@@ -492,7 +539,7 @@ two aggregator sources join in once the owner registers a slug via `set_pair_slu
 ```
 contracts/ConsensusPrice.py   the oracle
 contracts/PriceConsumer.py    reference integration, deployed and live
-test/direct/                  132 tests, no server required
+test/direct/                  164 tests, no server required
 docs/DESIGN.md                full design rationale
 docs/INTEGRATION.md           how to read this oracle from your contract
 deployments.json              live addresses and transaction hashes
@@ -502,7 +549,7 @@ deployments.json              live addresses and transaction hashes
 
 Commands under [Running the tests locally](#running-the-tests-locally).
 
-132 direct-mode tests covering price parsing across all six response shapes, median and
+164 direct-mode tests covering price parsing across all six response shapes, median and
 basis-point math, confidence boundaries, TWAP, symbol substitution, the ring buffer,
 volatility and staleness flags, prompt-injection defenses, governance access control and
 bounds, cross-contract composability, and the consensus rule itself.

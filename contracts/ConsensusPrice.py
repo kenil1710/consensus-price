@@ -29,6 +29,10 @@
 #     strict majority. Owner-added sources structurally cannot decide a price.
 #  5. Act invisibly: every governance call appends to gov_log (address + time),
 #     public via get_governance_log().
+#  6. Resize a live feed's history. Each PriceFeed fixes its ring capacity when
+#     it is created and keeps it for life; max_history seeds NEW feeds only. So
+#     no governance call can move which record reads treat as latest, and there
+#     is no migration hook to rewrite one - point 1 stays literally true.
 # The owner CAN toggle seeded sources within 3-4, add capped non-core sources,
 # register slugs, tune params within bounds, pause, withdraw fees. Pausing
 # cannot alter a stored price.
@@ -514,6 +518,10 @@ class PriceFeed:
     cursor: u32
     update_count: u256
     last_updated: u256
+    # Ring width for THIS feed, seeded from max_history when the feed is born
+    # and immutable after. Reads and writes both take the width from here, so a
+    # later max_history change cannot desynchronize them. See _cap().
+    capacity: u32
 
 
 @allow_storage
@@ -674,20 +682,40 @@ class ConsensusPrice(gl.Contract):
             })
         return tasks
 
-    def _latest(self, feed: PriceFeed) -> PriceRecord:
-        n = len(feed.history)
-        c = int(feed.cursor) % n
-        return feed.history[(c - 1) % n]
+    def _cap(self, feed: PriceFeed) -> int:
+        """The single ring width for a feed. Every reader and the writer call
+        this, so there is no second definition of "how big is this ring" that
+        could drift from the first.
 
-    def _ordered(self, feed: PriceFeed) -> list:
-        """Newest first; uniform across wrapped and unwrapped ring states."""
+        Taking the width from the mutable global instead was the resize bug: a
+        write used the new max_history as its modulus while a read still used
+        len(history), so the two disagreed about which slot held the newest
+        record and reads returned stale data. capacity is per feed and never
+        changes, so that gap cannot open. The fallback is unreachable - a feed
+        gets its capacity on the transaction that creates it, and every read
+        short-circuits on an empty history first."""
+        c = int(feed.capacity)
+        return c if c > 0 else int(self.max_history)
+
+    def _indices(self, feed: PriceFeed) -> list:
+        """Oldest -> newest. Below capacity the ring has never wrapped, so
+        physical order IS chronological order; at capacity the oldest record is
+        the one under the cursor."""
         n = len(feed.history)
         if n == 0:
             return []
+        if n < self._cap(feed):
+            return list(range(n))
         c = int(feed.cursor) % n
-        idxs = list(range(c, n)) + list(range(0, c))  # oldest -> newest
+        return list(range(c, n)) + list(range(0, c))
+
+    def _latest(self, feed: PriceFeed) -> PriceRecord:
+        return feed.history[self._indices(feed)[-1]]
+
+    def _ordered(self, feed: PriceFeed) -> list:
+        """Newest first; uniform across wrapped and unwrapped ring states."""
         out = []
-        for i in reversed(idxs):
+        for i in reversed(self._indices(feed)):
             out.append(feed.history[i])
         return out
 
@@ -787,6 +815,9 @@ class ConsensusPrice(gl.Contract):
         feed = self.feeds.get_or_insert_default(p)
         if p not in self.pair_seen:
             feed.pair = p
+            # The ring width is fixed here, for this feed's whole life. This is
+            # the only assignment to capacity anywhere in the contract.
+            feed.capacity = u32(self.max_history)
             self.pairs.append(p)
             self.pair_seen[p] = True
 
@@ -803,11 +834,11 @@ class ConsensusPrice(gl.Contract):
             flags.append("HIGH_VOLATILITY")
 
         seq = int(feed.update_count) + 1
-        mh = int(self.max_history)
-        if len(feed.history) < mh:
+        cap = self._cap(feed)  # same width the readers use, by construction
+        if len(feed.history) < cap:
             rec = feed.history.append_new_get()
         else:
-            rec = feed.history[int(feed.cursor) % mh]
+            rec = feed.history[int(feed.cursor) % cap]
         rec.pair = p
         rec.price = u256(med)
         rec.timestamp = u256(now)
@@ -821,7 +852,7 @@ class ConsensusPrice(gl.Contract):
         rec.source_data = json.dumps(prices)
         rec.seq = u256(seq)
         rec.quant_bps = u32(qb)
-        feed.cursor = u32((int(feed.cursor) + 1) % mh)
+        feed.cursor = u32((int(feed.cursor) + 1) % cap)
         feed.update_count = u256(seq)
         feed.last_updated = u256(now)
 
@@ -872,11 +903,12 @@ class ConsensusPrice(gl.Contract):
         if p not in self.feeds:
             return []
         now = self._now()
+        feed = self.feeds[p]
         n = int(count)
         if n <= 0:
-            n = int(self.max_history)
+            n = self._cap(feed)  # this feed's depth, not the current global
         out = []
-        for rec in self._ordered(self.feeds[p])[:n]:
+        for rec in self._ordered(feed)[:n]:
             out.append(self._view(rec, now))
         return out
 
@@ -888,10 +920,11 @@ class ConsensusPrice(gl.Contract):
         if p not in self.feeds:
             return {"found": False, "pair": p}
         now = self._now()
+        feed = self.feeds[p]
         n = int(count)
         if n <= 0:
-            n = int(self.max_history)
-        recs = self._ordered(self.feeds[p])[:n]
+            n = self._cap(feed)  # this feed's depth, not the current global
+        recs = self._ordered(feed)[:n]
         if len(recs) == 0:
             return {"found": False, "pair": p}
         chrono = list(reversed(recs))
@@ -935,6 +968,26 @@ class ConsensusPrice(gl.Contract):
             return True
         age = self._now() - int(self._latest(self.feeds[p]).timestamp)
         return age > int(self.staleness_seconds)
+
+    @gl.public.view
+    def get_feed_info(self, pair: str) -> typing.Any:
+        """A feed's own ring geometry. `capacity` is fixed at feed creation and
+        is the width BOTH reads and writes use, so it can legitimately differ
+        from the current max_history - which only ever seeds new feeds."""
+        p = _norm_pair(pair)
+        if p not in self.feeds:
+            return {"found": False, "pair": p,
+                    "capacity_if_created_now": int(self.max_history)}
+        feed = self.feeds[p]
+        return {
+            "found": True,
+            "pair": p,
+            "capacity": self._cap(feed),
+            "records_stored": len(feed.history),
+            "update_count": int(feed.update_count),
+            "last_updated": int(feed.last_updated),
+            "new_feed_capacity": int(self.max_history),
+        }
 
     @gl.public.view
     def decimals(self) -> int:
@@ -989,6 +1042,10 @@ class ConsensusPrice(gl.Contract):
             "min_sources": int(self.min_sources),
             "min_request_interval": int(self.min_request_interval),
             "max_history": int(self.max_history),
+            # explicit alias: max_history is the ring width handed to feeds
+            # created from now on. Live feeds keep the width they were born
+            # with - read it per pair with get_feed_info().
+            "new_feed_capacity": int(self.max_history),
             "quant_bps": int(self.quant_bps),
             "enabled_core": core,
             "enabled_non_core": non,
@@ -1085,6 +1142,14 @@ class ConsensusPrice(gl.Contract):
     @gl.public.write
     def set_params(self, tolerance_bps: int, volatility_bps: int, staleness_seconds: int,
                    min_sources: int, min_request_interval: int, max_history: int) -> None:
+        """max_history is the ring width for feeds created AFTER this call. A
+        live feed keeps the capacity it was born with, because resizing a ring
+        under live readers is what corrupted history before: writes moved to a
+        new modulus while reads still spanned the old array, so `latest` and
+        TWAP served stale records. No value of max_history can reach an
+        existing feed - and there is deliberately no migration hook, since one
+        would be an owner-callable path that rewrites price records and would
+        break the trust model at the top of this file."""
         self._only_owner()
         t = int(tolerance_bps)
         v = int(volatility_bps)
