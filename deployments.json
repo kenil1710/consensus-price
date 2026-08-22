@@ -8,6 +8,11 @@
       "studionet": "0x6dc688b2F104FB124B2a3bd17F7374b68dF06C53",
       "testnet-bradbury": "0xF6d254596B58B8c3898e33FA871ee17f68e94fB2",
       "reason": "prior build accepted validator medians within +/-200 bps and confidence within one rank, then stored the leader's exact values"
+    },
+    "source_sha256": {
+      "contracts/ConsensusPrice.py": "5be104669783401afed4921a32ccbec8356e5a7d13e600653c8d8e155dd36ba0",
+      "contracts/PriceConsumer.py": "a6ff0b475ab472787179772640f3dc0ab91e472fb93048b55136f9d18345f048",
+      "note": "both networks deployed from these exact files, unmodified"
     }
   },
   "studionet": {
@@ -90,7 +95,8 @@
         "price": "1897500000000000000000",
         "value_usd_atto": "4743750000000000000000",
         "confidence": "HIGH"
-      }
+      },
+      "recorded_on": "the immediately preceding build at 0x39C4f40ACe9A868F8158909CdCd03281388AeC10, listed under ring_capacity.supersedes. The consensus rule these rounds exercise is byte-identical in the current deployment - the ring-capacity fix changed how history is indexed, not how a price is agreed or stored."
     },
     "ring_capacity_check": {
       "method": "ETH/USD created while max_history was 24. BTC/USD then created while max_history was 3, driven to 4 writes so its capacity-3 ring wrapped, then max_history grown 3 -> 64 and two more prices written. This is the exact grow-after-wrap case that returned out-of-order history before the fix.",
@@ -137,11 +143,25 @@
       "min_request_interval": 0
     },
     "PriceConsumer": {
-      "address": "0xa67e231e29623ceeacd03A7314C273b0101F1490",
-      "deploy_tx": "0x505129ad9c1c74366bfe407e2bd53cfdd543358acd0c47543903d052cec85e49",
-      "oracle": "0xa7a96AF9A750F7465321980182E67bAd7E668A79",
+      "address": "0xC20700C3021bd620f076967a04d916dBfB8F05cf",
+      "deploy_tx": "0x648ad157289bd4180aa09389fd0c4ff5bdca3de2862c6e63e7a42f19265cec72",
+      "oracle": "0x8c2Dd5E8B305F6B9659F058Ac86095bbc9733146",
       "max_age_seconds": 900,
-      "min_confidence": "MEDIUM"
+      "min_confidence": "MEDIUM",
+      "verified_live": {
+        "get_config": "oracle field reads 0x8c2Dd5E8B305F6B9659F058Ac86095bbc9733146 - wired to the new oracle",
+        "is_safe_to_trade(BTC/USD)": {
+          "safe": false,
+          "reason": "stale: 1428s"
+        },
+        "twap_quote(BTC/USD, 5)": {
+          "samples": 2,
+          "window_seconds": 1860,
+          "twap": "77125000000000000000000",
+          "oldest_timestamp": 1787392005
+        },
+        "note": "the stale refusal is the designed safe path, not a failure: the BTC record was older than the consumer's 900s max_age, so the strict read refused it"
+      }
     },
     "cli_note": "request_price REQUIRES --fee-value on Bradbury (0.2 GEN used here). CLI 0.39.2 has NO --gas flag - `genlayer deploy --help` lists only --contract, --rpc, --fees, --fee-value, --valid-until and --args, so --gas=80000000 is rejected; --fee-value is the fee deposit. LEADER_TIMEOUT / VALIDATORS_TIMEOUT remain frequent - those are nodes not answering, not consensus disagreements, and a retry clears them.",
     "determinism_check": {
@@ -193,6 +213,27 @@
         "price": "1897500000000000000000",
         "value_usd_atto": "4743750000000000000000",
         "confidence": "HIGH"
+      },
+      "recorded_on": "the immediately preceding build at 0xa7a96AF9A750F7465321980182E67bAd7E668A79, listed under ring_capacity.supersedes. Same caveat as the studionet entry."
+    },
+    "ring_capacity_check": {
+      "status": "partial - network congestion, not a contract issue",
+      "verified": "BTC/USD was created while max_history was 3 and reports capacity 3. Its two records read back consistently: get_price_history returns seqs 2, 1 with descending timestamps and get_latest_price names BTC/USD:2. get_feed_info and get_config both expose the per-feed capacity alongside new_feed_capacity.",
+      "not_completed": "The grow-the-global step (max_history 3 -> 64 under the wrapped feed) could not be landed: Bradbury request_price rounds ran ~8-10 min each with frequent LEADER_TIMEOUT, and the set_params tx timed out waiting for ACCEPTED. This is network throughput, not contract behaviour.",
+      "full_proof_ran_on": "studionet - see studionet.ring_capacity_check for the complete grow-after-wrap sequence with before/after reads",
+      "btc_feed": {
+        "capacity": 3,
+        "records_stored": 2,
+        "update_count": 2,
+        "history_price_ids": [
+          "BTC/USD:2",
+          "BTC/USD:1"
+        ],
+        "history_timestamps": [
+          1787392434,
+          1787392005
+        ],
+        "latest_price_id": "BTC/USD:2"
       }
     }
   },

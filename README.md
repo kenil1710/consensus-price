@@ -22,7 +22,7 @@ outputs for one request cannot differ. See [Consensus](#3-consensus).
 | Contract | Address |
 |---|---|
 | `ConsensusPrice` | `0x8c2Dd5E8B305F6B9659F058Ac86095bbc9733146` |
-| `PriceConsumer` | `0xa67e231e29623ceeacd03A7314C273b0101F1490` |
+| `PriceConsumer` | `0xC20700C3021bd620f076967a04d916dBfB8F05cf` |
 
 **Studionet**
 
@@ -37,42 +37,51 @@ Full transaction hashes in [`deployments.json`](deployments.json).
 Intelligent Contracts submission, and the contract itself is the deliverable. Every method
 below can be called in the browser with no wallet and no install.
 
-Real result from a live request, not a mock:
+Real result from a live request on the current deployment, not a mock:
 
 ```
 $ genlayer call 0xEB6FA760Ff86E50ef9089ed194d919ad0A155Fe0 get_latest_price --args "ETH/USD"
 
 {
   pair: 'ETH/USD',
-  price: '1897500000000000000000',     # $1,897.50 — the bucket midpoint
+  price: '2425000000000000000000',      # $2,425.00 — the bucket midpoint
   decimals: 18,
   confidence: 'HIGH',
   quant_bps: 50,
-  bucket: '379@5000000000000000000',   # bucket 379, $5 wide -> [$1895, $1900)
-  n_sources: 6,                        # of 7 attempted
-  spread_bps: 26,                      # worst source is one bucket away
-  price_id: 'ETH/USD:4',
+  bucket: '242@10000000000000000000',   # bucket 242, $10 wide -> [$2420, $2430)
+  n_sources: 6,                         # of 7 attempted
+  spread_bps: 0,                        # every source landed in the same bucket
+  price_id: 'ETH/USD:1',
+  flags: 'FIRST',
+  age_seconds: 3629,                    # nobody has requested since; see is_stale
+  is_stale: true,
   sources: {
-    coinbase:  '1897500000000000000000',
-    coingecko: '1902500000000000000000',
-    gemini:    '1897500000000000000000',
-    kucoin:    '1902500000000000000000',
-    paprika:   '1897500000000000000000',
-    yahoo:     '1897500000000000000000'
+    coinbase:  '2425000000000000000000',
+    coingecko: '2425000000000000000000',
+    gemini:    '2425000000000000000000',
+    kucoin:    '2425000000000000000000',
+    paprika:   '2425000000000000000000',
+    yahoo:     '2425000000000000000000'
   }
 }
 ```
 
-Six independent venues, each fetched at its own slightly different real price, snapped onto
-the lattice: four landed in bucket 379 and two in bucket 380. The median is a **majority vote
-over lattice points**, so the result is 379 — and every validator that agreed stored this
-exact `u256`, not something near it. The seventh source is recorded on-chain with its failure
-reason. That is the design working: one dead source is data, not an outage.
+Six independent venues, each fetched at its own slightly different real price, all snapped
+onto the same lattice point — `spread_bps: 0` is the quantizer doing its job, not six APIs
+miraculously agreeing to the wei. The median is a **majority vote over lattice points**, so
+every validator that agreed stored this exact `u256`, not something near it. The seventh
+source failed and is recorded on-chain with its reason: one dead source is data, not an
+outage.
+
+`is_stale: true` here is also the design working — this record is an hour old because nobody
+has paid for a fresher one, and the oracle says so rather than pretending. Send a
+`request_price` (below) and the next read is seconds old. This is exactly the condition
+`get_price_checked` refuses to serve.
 
 ### The same price from two different networks
 
 The same request ran on Bradbury, against a completely different validator set on different
-infrastructure:
+infrastructure (same superseded-build caveat as below):
 
 | | Studionet | Bradbury |
 |---|---|---|
@@ -86,6 +95,13 @@ same stored `u256`, to the wei.** Under the old tolerance rule these two would m
 been "close"; now they are equal, and equal is what a downstream contract can price against.
 
 ### Determinism, checked live
+
+> Recorded on the immediately preceding build, at the addresses listed under `supersedes` in
+> [`deployments.json`](deployments.json) — `0x39C4f40A…` (Studionet) and `0xa7a96AF9…`
+> (Bradbury). The consensus rule these rounds exercise is byte-identical in the current
+> deployment; the ring-capacity fix changed how history is indexed, not how a price is agreed
+> or stored. Re-running `request_price` against the addresses at the top of this README
+> reproduces the same behaviour at whatever ETH is trading at now.
 
 Four consecutive `request_price("ETH/USD")` rounds on Studionet, rate limit set to `0`:
 
@@ -282,7 +298,7 @@ than storing garbage.
 returns comes from a free cross-contract read of the oracle.
 
 ```bash
-genlayer call 0xa67e231e29623ceeacd03A7314C273b0101F1490 quote --args "ETH/USD" 2500000000000000000
+genlayer call 0xC20700C3021bd620f076967a04d916dBfB8F05cf quote --args "ETH/USD" 2500000000000000000
 ```
 
 Returns the USD value of 2.5 ETH — `value_usd_atto: '4693998811521107625000'`, about
@@ -291,10 +307,10 @@ Returns the USD value of 2.5 ETH — `value_usd_atto: '4693998811521107625000'`,
 The more interesting call is the one that **refuses**:
 
 ```bash
-genlayer call 0xa67e231e29623ceeacd03A7314C273b0101F1490 quote --args "DOGE/USD" 1000000000000000000
+genlayer call 0xC20700C3021bd620f076967a04d916dBfB8F05cf quote --args "DOGE/USD" 1000000000000000000
 # execution failed — no price stored for DOGE/USD
 
-genlayer call 0xa67e231e29623ceeacd03A7314C273b0101F1490 is_safe_to_trade --args "DOGE/USD"
+genlayer call 0xC20700C3021bd620f076967a04d916dBfB8F05cf is_safe_to_trade --args "DOGE/USD"
 # { safe: false, reason: 'no price for DOGE/USD' }
 ```
 

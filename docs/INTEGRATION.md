@@ -115,6 +115,27 @@ if out["found"]:
 price_8dp = oracle.view().get_price_scaled("ETH/USD", 8)   # Chainlink-style
 ```
 
+### `get_feed_info(pair)` — how deep this feed's history actually goes
+
+Each feed's ring capacity is fixed when the feed is first created and never changes, so
+`get_twap(pair, 0)` and `get_price_history(pair, 0)` span *that feed's* depth, not whatever
+the oracle's current `max_history` parameter says. The two can legitimately differ, and this
+is the read that tells you which is which:
+
+```python
+info = oracle.view().get_feed_info("ETH/USD")
+depth = int(info["capacity"])           # what this feed will ever hold
+have  = int(info["records_stored"])     # what it holds right now
+```
+
+If your strategy needs a minimum window, check `records_stored` before trusting a TWAP —
+a feed three records old gives you a three-record average regardless of the count you pass.
+`get_twap` already reports `samples` and `window_seconds` for exactly this reason; prefer
+asserting on those over assuming a depth.
+
+Governance cannot resize a live feed, so a capacity you read once will not move underneath
+you. See "Ring capacity is per feed" in the README for why that guarantee exists.
+
 ---
 
 ## 4. The decimals contract
@@ -256,7 +277,7 @@ directly. It is live on both networks:
 
 | Network | PriceConsumer | reading oracle |
 |---|---|---|
-| Bradbury | `0xa67e231e29623ceeacd03A7314C273b0101F1490` | `0x8c2Dd5E8B305F6B9659F058Ac86095bbc9733146` |
+| Bradbury | `0xC20700C3021bd620f076967a04d916dBfB8F05cf` | `0x8c2Dd5E8B305F6B9659F058Ac86095bbc9733146` |
 | Studionet | `0x3bAb00032b29Db9E14f12a3D975F6D4Add77F8F9` | `0xEB6FA760Ff86E50ef9089ed194d919ad0A155Fe0` |
 
 It demonstrates both integration styles side by side:
@@ -269,25 +290,29 @@ It demonstrates both integration styles side by side:
 Verified live, against real prices:
 
 ```
-$ genlayer call 0xcFdF9...0d1B quote --args "ETH/USD" 2500000000000000000
+$ genlayer call 0x3bAb0...F8F9 quote --args "ETH/USD" 2500000000000000000
 {
   pair: 'ETH/USD',
-  amount_atto:    '2500000000000000000',   # 2.5 ETH
-  price:          '1897500000000000000000',   # bucket 379, a midpoint
-  value_usd_atto: '4743750000000000000000',   # $4,743.75 — exact, not approximate
+  amount_atto:    '2500000000000000000',      # 2.5 ETH
+  price:          '2425000000000000000000',   # bucket 242, a midpoint
+  value_usd_atto: '6062500000000000000000',   # $6,062.50 — exact, not approximate
   confidence: 'HIGH',
-  age_seconds: 239
+  flags: 'FIRST',
+  age_seconds: 410
 }
 
-$ genlayer call 0xcFdF9...0d1B quote --args "BTC/USD" 1000000000000000000
-execution failed          # no price stored for BTC/USD at the time — correctly refused
+$ genlayer call 0x3bAb0...F8F9 is_safe_to_trade --args "DOGE/USD"
+{ safe: false, reason: 'no price for DOGE/USD' }
 
-$ genlayer call 0xcFdF9...0d1B is_safe_to_trade --args "BTC/USD"
-{ safe: false, reason: 'no price for BTC/USD' }
+# and the same quote once that ETH record aged past the consumer's 900s max_age:
+$ genlayer call 0x3bAb0...F8F9 quote --args "ETH/USD" 2500000000000000000
+execution failed          # [EXPECTED] stale — correctly refused rather than served
 ```
 
-The second and third calls are the point. The strict path refused to produce a number it
-could not stand behind, and the graceful path explained why — neither one invented a price.
+The last two calls are the point. The graceful path explained why it had nothing for
+`DOGE/USD`, and the strict path refused a real ETH price purely because it had aged past the
+consumer's own freshness bar. Neither one invented a number, and neither one served a stale
+one silently.
 
 ---
 
